@@ -1,0 +1,350 @@
+[
+  {
+    "id": "relation/13023805",
+    "field": "name",
+    "before": "Mauban North Elementary School â… ",
+    "after": "Mauban North Elementary School Ⅰ"
+  },
+  {
+    "id": "relation/14719885",
+    "field": "addr:village",
+    "before": "Barangay â…£",
+    "after": "Barangay Ⅳ"
+  },
+  {
+    "id": "relation/17632993",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "relation/17632993",
+    "field": "name",
+    "before": "DasmariÃ±as Evacuation Shelter",
+    "after": "Dasmariñas Evacuation Shelter"
+  },
+  {
+    "id": "way/35125899",
+    "field": "name",
+    "before": "Anak Pawis â…  Covered Court",
+    "after": "Anak Pawis Ⅰ Covered Court"
+  },
+  {
+    "id": "way/46507461",
+    "field": "addr:village",
+    "before": "TaÃ±ong",
+    "after": "Tañong"
+  },
+  {
+    "id": "way/46507461",
+    "field": "name",
+    "before": "TaÃ±ong High School",
+    "after": "Tañong High School"
+  },
+  {
+    "id": "way/89869420",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/89980681",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/90939627",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/98626285",
+    "field": "name",
+    "before": "Biliboy Primary School â€“ Annex",
+    "after": "Biliboy Primary School – Annex"
+  },
+  {
+    "id": "way/118484049",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/243128447",
+    "field": "name",
+    "before": "Santo NiÃ±o Covered Court",
+    "after": "Santo Niño Covered Court"
+  },
+  {
+    "id": "way/243128448",
+    "field": "name",
+    "before": "Santo NiÃ±o Multi-Purpose Hall",
+    "after": "Santo Niño Multi-Purpose Hall"
+  },
+  {
+    "id": "way/243129375",
+    "field": "name",
+    "before": "Santo NiÃ±o Chapel",
+    "after": "Santo Niño Chapel"
+  },
+  {
+    "id": "way/247117168",
+    "field": "name",
+    "before": "Homonhon National High School â€“ Sulangan Annex",
+    "after": "Homonhon National High School – Sulangan Annex"
+  },
+  {
+    "id": "way/264693970",
+    "field": "name",
+    "before": "Old ZaÃ±iga Basketball Court",
+    "after": "Old Zañiga Basketball Court"
+  },
+  {
+    "id": "way/268550777",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/306198609",
+    "field": "name",
+    "before": "Ramon AvanceÃ±a National High School",
+    "after": "Ramon Avanceña National High School"
+  },
+  {
+    "id": "way/320623904",
+    "field": "addr:quarter",
+    "before": "Santo NiÃ±o",
+    "after": "Santo Niño"
+  },
+  {
+    "id": "way/320623904",
+    "field": "name",
+    "before": "Santo NiÃ±o Elementary School",
+    "after": "Santo Niño Elementary School"
+  },
+  {
+    "id": "way/413820346",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/424011925",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/424662770",
+    "field": "name",
+    "before": "A. Montes â…  Elementary School",
+    "after": "A. Montes Ⅰ Elementary School"
+  },
+  {
+    "id": "way/426098910",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/426540720",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/426743281",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/500017855",
+    "field": "name",
+    "before": "ErmitaÃ±o Covered Court",
+    "after": "Ermitaño Covered Court"
+  },
+  {
+    "id": "way/526722868",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/568394157",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/571019088",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/579764699",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/646400662",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "way/690647433",
+    "field": "addr:place",
+    "before": "Cabilao PequeÃ±o",
+    "after": "Cabilao Pequeño"
+  },
+  {
+    "id": "way/690647433",
+    "field": "name",
+    "before": "Cabilao PequeÃ±o Elementary School",
+    "after": "Cabilao Pequeño Elementary School"
+  },
+  {
+    "id": "way/753530275",
+    "field": "addr:village",
+    "before": "Santo NiÃ±o",
+    "after": "Santo Niño"
+  },
+  {
+    "id": "way/753530275",
+    "field": "name",
+    "before": "Santo NiÃ±o Elementary School",
+    "after": "Santo Niño Elementary School"
+  },
+  {
+    "id": "way/760424582",
+    "field": "addr:village",
+    "before": "Poblacion â…¡",
+    "after": "Poblacion Ⅱ"
+  },
+  {
+    "id": "way/769944138",
+    "field": "addr:village",
+    "before": "Maitim â…¡ East",
+    "after": "Maitim Ⅱ East"
+  },
+  {
+    "id": "way/769944138",
+    "field": "name",
+    "before": "Maitim â…¡ Elementary School",
+    "after": "Maitim Ⅱ Elementary School"
+  },
+  {
+    "id": "way/772945242",
+    "field": "name",
+    "before": "Santo NiÃ±o Multi-Purpose Covered Court",
+    "after": "Santo Niño Multi-Purpose Covered Court"
+  },
+  {
+    "id": "way/787014360",
+    "field": "name",
+    "before": "Vizal Santo NiÃ±o Covered Court",
+    "after": "Vizal Santo Niño Covered Court"
+  },
+  {
+    "id": "way/787014361",
+    "field": "name",
+    "before": "Vizal Santo NiÃ±o Chapel",
+    "after": "Vizal Santo Niño Chapel"
+  },
+  {
+    "id": "way/787354978",
+    "field": "name",
+    "before": "Nuestra SeÃ±ora dela Merced Parish",
+    "after": "Nuestra Señora dela Merced Parish"
+  },
+  {
+    "id": "way/791668076",
+    "field": "name",
+    "before": "San Juan BaÃ±o Barangay Hall",
+    "after": "San Juan Baño Barangay Hall"
+  },
+  {
+    "id": "way/794217175",
+    "field": "name",
+    "before": "San Juan BaÃ±o Covered Court",
+    "after": "San Juan Baño Covered Court"
+  },
+  {
+    "id": "way/807802811",
+    "field": "addr:place",
+    "before": "Santo NiÃ±o",
+    "after": "Santo Niño"
+  },
+  {
+    "id": "way/807802817",
+    "field": "addr:place",
+    "before": "Santo NiÃ±o",
+    "after": "Santo Niño"
+  },
+  {
+    "id": "way/820801645",
+    "field": "addr:street",
+    "before": "SeÃ±ora Avenue",
+    "after": "Señora Avenue"
+  },
+  {
+    "id": "way/820801645",
+    "field": "name",
+    "before": "SeÃ±ora Covered Court",
+    "after": "Señora Covered Court"
+  },
+  {
+    "id": "way/826320208",
+    "field": "name",
+    "before": "Santo NiÃ±o Tabuan Covered Court",
+    "after": "Santo Niño Tabuan Covered Court"
+  },
+  {
+    "id": "way/889092215",
+    "field": "name",
+    "before": "San Juan BaÃ±o High School",
+    "after": "San Juan Baño High School"
+  },
+  {
+    "id": "way/896365195",
+    "field": "name",
+    "before": "Santo NiÃ±o Covered Court",
+    "after": "Santo Niño Covered Court"
+  },
+  {
+    "id": "way/911077667",
+    "field": "name",
+    "before": "SeÃ±or Salvador Parish Church",
+    "after": "Señor Salvador Parish Church"
+  },
+  {
+    "id": "way/912644422",
+    "field": "addr:barangay",
+    "before": "Vizal Santo NiÃ±o",
+    "after": "Vizal Santo Niño"
+  },
+  {
+    "id": "way/912644422",
+    "field": "name",
+    "before": "Vizal Santo NiÃ±o Elementary School",
+    "after": "Vizal Santo Niño Elementary School"
+  },
+  {
+    "id": "way/1081811174",
+    "field": "addr:city",
+    "before": "DasmariÃ±as",
+    "after": "Dasmariñas"
+  },
+  {
+    "id": "node/8477853830",
+    "field": "name",
+    "before": "Vizal Santo NiÃ±o Health Center",
+    "after": "Vizal Santo Niño Health Center"
+  }
+]

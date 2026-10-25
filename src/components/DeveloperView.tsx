@@ -1,0 +1,15 @@
+import type { Settings } from '../data/user'
+import { formatTime, POLL_MS, type Snapshot } from '../data/monitoring'
+import { Group, Row } from './SettingsView'
+
+export default function DeveloperView({ settings, update, snapshot, onBack, onResearch }: {
+  settings: Settings; update: (p: Partial<Settings>) => void; snapshot: Snapshot; onBack: () => void; onResearch: () => void;
+}) {
+  return <div className="mx-auto grid max-w-2xl gap-7">
+    <header className="flex items-center gap-3"><button aria-label="Back to settings" onClick={onBack} className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-panel">←</button><div><p className="text-xs font-bold uppercase tracking-wider text-teal">Development only</p><h1 className="text-2xl font-extrabold">Developer tools</h1></div></header>
+    <p className="rounded-xl border border-line bg-panel p-4 text-sm leading-relaxed text-fog">For prototype testing and research. These tools are separate from everyday preferences. This is a local tool area, not a secured developer account.</p>
+    <Group title="Research"><Row label="Research trials" hint="Local notebook, trial results and CSV export"><button onClick={onResearch} className="min-h-11 rounded-lg border border-line px-4 py-2.5 text-sm font-semibold">Open notebook</button></Row></Group>
+    <Group title="Event testing"><div className="p-5"><label htmlFor="event-threshold" className="block font-semibold">Minimum water category for events</label><p id="event-hint" className="mt-1 text-sm leading-relaxed text-fog">Filters water changes shown in Alerts while Agos is open. Rain events are unaffected. Background push is not connected.</p><select id="event-threshold" aria-describedby="event-hint" value={settings.minAlert} onChange={e => update({ minAlert: Number(e.target.value) as Settings['minAlert'] })} className="mt-4 min-h-11 w-full rounded-lg border border-line bg-panel p-3"><option value={0}>All categories</option><option value={1}>LOW and above</option><option value={2}>MID and above</option><option value={3}>HIGH only</option></select></div></Group>
+    <Group title="Diagnostics"><dl className="grid gap-4 p-5 text-sm"><div><dt className="font-semibold">Data source</dt><dd className="mt-1 text-fog">Shared FloodWatch bench endpoint · read-only</dd></div><div><dt className="font-semibold">Refresh interval</dt><dd className="mt-1 text-fog">{POLL_MS / 1000} seconds</dd></div><div><dt className="font-semibold">Last app refresh</dt><dd className="mt-1 text-fog">{snapshot.fetchedAt ? formatTime(new Date(snapshot.fetchedAt).toISOString()) : 'Not available'}</dd></div><div><dt className="font-semibold">Snapshot</dt><dd className="mt-1 text-fog">{snapshot.cached ? 'Saved on this device' : snapshot.data ? 'Retrieved from backend' : 'No data'}</dd></div><div><dt className="font-semibold">Installation testing</dt><dd className="mt-1 text-fog">Physical Android/iOS installation has not been verified.</dd></div></dl>{snapshot.error && <p className="break-words border-t border-line p-5 text-sm text-fog">{snapshot.error}</p>}</Group>
+  </div>
+}

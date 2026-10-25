@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+/* Matches floodwatchz.pages.dev (style.css + domain.js COLORS).
+   Legacy names: ink = surface / on-color text, paper = primary text & solid buttons. */
+@theme {
+  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-page: #f2f5f7;
+  --color-ink: #ffffff;
+  --color-panel: #ffffff;
+  --color-line: #dce4e8;
+  --color-fog: #526873;
+  --color-paper: #152e3b;
+  --color-navy: #102b3b;
+  --color-navy-2: #234453;
+  --color-teal: #067a85;
+  --color-cyan: #50d7dd;
+  --color-ok: #168260;
+  --color-l1: #9b7000;
+  --color-l2: #ca5b13;
+  --color-l3: #c13c49;
+
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-fade-in: fade-in 0.3s ease-out both;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-fade-in { animation: none; }
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    min-height: 100%;
+  }
+  html,
+  body {
+    background: var(--color-page);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+  }
+  ::selection {
+    background: var(--color-cyan);
+    color: var(--color-navy);
+  }
+  h1,
+  h2 {
+    letter-spacing: -0.04em;
+  }
+  :focus-visible {
+    outline: 3px solid #178bac;
+    outline-offset: 3px;
+  }
+  * {
+    scrollbar-width: none;
+  }
+}
+
+.leaflet-container {
+  background: var(--color-panel);
+  font-family: var(--font-sans);
+}
+
+.leaflet-control-attribution { font-size: 9px; }
+
+/* Map pins + info cards */
+.fw-pin div {
+  position: relative; display: grid; place-items: center;
+  width: var(--s); height: var(--s); border-radius: 50%;
+  background: var(--c); border: 3px solid var(--r);
+  box-shadow: 0 4px 10px rgba(16, 43, 59, .35);
+  color: #fff; font: 800 14px/1 var(--font-sans);
+  transition: transform .15s;
+}
+.fw-pin div[style*="--c:#fff"] { color: #102b3b; }
+.fw-pin div::after {
+  content: ''; position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%);
+  border: 6px solid transparent; border-top: 7px solid var(--r);
+}
+.fw-pin:hover div { transform: scale(1.12); }
+.fw-popup .leaflet-popup-content-wrapper { border-radius: 14px; padding: 0; overflow: hidden; box-shadow: 0 16px 40px -12px rgba(16, 43, 59, .45); }
+.fw-popup .leaflet-popup-content { margin: 0; width: 250px !important; }
+.fw-popup .leaflet-popup-close-button { top: 10px !important; right: 8px !important; }
+.fw-card { border-top: 5px solid var(--c); padding: 14px 16px 14px; font-family: var(--font-sans); color: var(--color-ink, #102b3b); }
+.fw-card p { margin: 0 !important; }
+.fw-card .t { font-weight: 800; font-size: 15px; color: var(--c); }
+.fw-card .s { font-weight: 600; font-size: 14px; margin-top: 2px !important; color: #102b3b; }
+.fw-card .m { margin-top: 10px !important; padding-top: 10px; border-top: 1px solid #e3e7ea; font-size: 12px; color: #5d7280; line-height: 1.5; }
+.fw-card .f { margin-top: 8px !important; font-size: 12px; font-weight: 600; color: #102b3b; }
+button, [role='button'], select { touch-action: manipulation; }
+button { min-height: 44px; }
+input, textarea, select { font-size: 16px; max-width: 100%; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; } }
+
+/* Top safe area: notch / status bar / Dynamic Island. Phones always reserve room for the status bar,
+   even in previews or browsers that report a 0 inset. */
+:root { --safe-top: var(--safe-area-inset-top,env(safe-area-inset-top,0px)); }
+@media (max-width: 640px) {
+  :root { --safe-top: var(--safe-area-inset-top,env(safe-area-inset-top,0px)); }
+}

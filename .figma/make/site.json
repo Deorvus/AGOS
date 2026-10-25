@@ -1,0 +1,11 @@
+{
+  "title": "Agos",
+  "description": "This app assists riders in navigating flood conditions by providing real-time updates and safety information, enhancing travel safety during emergencies.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

@@ -24,6 +24,10 @@ export type Settings = {
   work: string
   homePlace?: SavedPlace | null
   workPlace?: SavedPlace | null
+  nearbyNotify: boolean
+  nearbyRadiusM: number
+  backgroundNotify: boolean
+  predictiveRouting: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -35,6 +39,10 @@ export const DEFAULT_SETTINGS: Settings = {
   mapStyle: 'light',
   home: '',
   work: '',
+  nearbyNotify: false,
+  nearbyRadiusM: 1000,
+  backgroundNotify: true,
+  predictiveRouting: true,
 }
 
 // `id` is the stable key for database records (reports, votes); it never changes, even if the rider renames

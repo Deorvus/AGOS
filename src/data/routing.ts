@@ -1,10 +1,26 @@
 import { suggestLocations } from './location-suggestions'
 import type { Level, Node } from './sensors'
+import {
+  evaluatePredictiveRisk,
+  getPredictedFloodSegments,
+  type HistoricalFloodZone,
+  type FloodRiskLevel,
+  type PredictedSegment,
+} from './predictive-routing'
 
 export type LatLng = [number, number]
 export type Step = { type: string; modifier?: string; name: string; exit?: number; distance: number; loc: LatLng }
 export type RawRoute = { coords: LatLng[]; steps: Step[]; duration: number; distance: number; detourAround?: string }
-export type Evaluated = RawRoute & { hits: Node[]; worst: Level }
+export type Evaluated = RawRoute & {
+  hits: Node[]
+  worst: Level
+  predictedHotspots: HistoricalFloodZone[]
+  predictiveRisk: FloodRiskLevel
+  predictiveAdvisory?: string
+  confidenceScore: number
+  isPredictiveAlternative: boolean
+  predictedSegments: PredictedSegment[]
+}
 
 // Illustrative proximity rule; not a measured flood extent or road-closure boundary
 export const FLOOD_RADIUS = 300
@@ -18,8 +34,25 @@ export function distM(a: LatLng, b: LatLng) {
 }
 
 export function evaluate(r: RawRoute, nodes: Node[]): Evaluated {
-  const hits = nodes.filter(n => n.level > 0 && (n.source !== 'community' || (Date.now() >= n.updated && Date.now() - n.updated < 21600000)) && nearRoute(r.coords, [n.lat, n.lng]))
-  return { ...r, hits, worst: Math.max(0, ...hits.map((h) => h.level)) as Level }
+  const hits = nodes.filter(
+    (n) =>
+      n.level > 0 &&
+      (n.source !== 'community' || (Date.now() >= n.updated && Date.now() - n.updated < 21600000)) &&
+      nearRoute(r.coords, [n.lat, n.lng]),
+  )
+  const predictive = evaluatePredictiveRisk(r.coords)
+  const predictedSegments = getPredictedFloodSegments(r.coords)
+  return {
+    ...r,
+    hits,
+    worst: Math.max(0, ...hits.map((h) => h.level)) as Level,
+    predictedHotspots: predictive.predictedHotspots,
+    predictiveRisk: predictive.predictiveRisk,
+    predictiveAdvisory: predictive.advisory,
+    confidenceScore: predictive.confidenceScore,
+    isPredictiveAlternative: !!r.detourAround?.startsWith('Historical:'),
+    predictedSegments,
+  }
 }
 
 // Check the intervening geometry too, rather than just sparse route vertices.
@@ -36,8 +69,15 @@ export function nearRoute(coords: LatLng[], p: LatLng, radius = FLOOD_RADIUS) {
   })
 }
 
-// Safest first (lowest flood level), then fastest
-export const rank = (a: Evaluated, b: Evaluated) => a.worst - b.worst || a.duration - b.duration
+// Safest first (lowest confirmed flood level), then lowest predictive historical risk, then fastest
+export const rank = (a: Evaluated, b: Evaluated) => {
+  if (a.worst !== b.worst) return a.worst - b.worst
+  const riskWeight: Record<FloodRiskLevel, number> = { Low: 0, Moderate: 1, High: 2 }
+  const aRisk = riskWeight[a.predictiveRisk] ?? 0
+  const bRisk = riskWeight[b.predictiveRisk] ?? 0
+  if (aRisk !== bRisk) return aRisk - bRisk
+  return a.duration - b.duration
+}
 
 async function osrm(points: LatLng[], alternatives: boolean, signal?: AbortSignal): Promise<RawRoute[]> {
   const path = points.map(([lat, lng]) => `${lng},${lat}`).join(';')
@@ -67,30 +107,72 @@ async function osrm(points: LatLng[], alternatives: boolean, signal?: AbortSigna
   }))
 }
 
-// Fetch normal alternatives; if every one crosses a sensor at the rider's avoid level, try detours via points around it
-export async function planRoutes(from: LatLng, to: LatLng, nodes: Node[], avoid = 2, signal?: AbortSignal): Promise<RawRoute[]> {
+// Fetch normal alternatives; if every one crosses a sensor at the rider's avoid level, try detours via points around it.
+// Also evaluates historical flood zones: if routes cross high-risk historical flood zones, proactively computes
+// alternative detours before the rider even encounters a live flood report.
+export async function planRoutes(
+  from: LatLng,
+  to: LatLng,
+  nodes: Node[],
+  avoid = 2,
+  signal?: AbortSignal,
+  predictive = true,
+): Promise<RawRoute[]> {
   const base = await osrm([from, to], true, signal)
   if (!base.length) throw new Error('No route found. Try another destination.')
-  if (base.map((r) => evaluate(r, nodes)).some((r) => r.worst < avoid)) return base
 
-  const blockers = evaluate(base[0], nodes).hits.filter((n) => n.level >= avoid)
-  const off = 0.012 // ≈ 1.3 km
-  const vias: { via: LatLng; name: string }[] = blockers.flatMap((n) =>
-    [
-      [off, 0],
-      [-off, 0],
-      [0, off],
-      [0, -off],
-    ].map(([a, b]) => ({ via: [n.lat + a, n.lng + b] as LatLng, name: n.name })),
-  )
-  const detours = await Promise.all(
-    vias.map(({ via, name }) =>
-      osrm([from, via, to], false, signal)
-        .then((r) => r.map((x) => ({ ...x, detourAround: name })))
-        .catch(() => []),
-    ),
-  )
-  return [...base, ...detours.flat()]
+  const detours: RawRoute[] = []
+
+  // 1. Reactive live-sensor / report detours if all base options violate avoid level
+  if (!base.map((r) => evaluate(r, nodes)).some((r) => r.worst < avoid)) {
+    const blockers = evaluate(base[0], nodes).hits.filter((n) => n.level >= avoid)
+    const off = 0.012 // ≈ 1.3 km
+    const vias: { via: LatLng; name: string }[] = blockers.flatMap((n) =>
+      [
+        [off, 0],
+        [-off, 0],
+        [0, off],
+        [0, -off],
+      ].map(([a, b]) => ({ via: [n.lat + a, n.lng + b] as LatLng, name: n.name })),
+    )
+    const liveDetours = await Promise.all(
+      vias.map(({ via, name }) =>
+        osrm([from, via, to], false, signal)
+          .then((r) => r.map((x) => ({ ...x, detourAround: name })))
+          .catch(() => []),
+      ),
+    )
+    detours.push(...liveDetours.flat())
+  }
+
+  // 2. Predictive alternative generation using historical flood data:
+  // If routes pass through a known historical flood hotspot, proactively plan alternatives
+  // before the user even encounters a live flood report!
+  if (predictive && base[0]) {
+    const primaryEvaluated = evaluate(base[0], nodes)
+    const highRiskZones = primaryEvaluated.predictedHotspots.filter((h) => h.riskLevel === 'High')
+    if (highRiskZones.length > 0) {
+      const off = 0.015 // ≈ 1.6 km detour offset around the historical basin
+      const vias: { via: LatLng; name: string }[] = highRiskZones.flatMap((zone) =>
+        [
+          [off, 0],
+          [-off, 0],
+          [0, off],
+          [0, -off],
+        ].map(([a, b]) => ({ via: [zone.lat + a, zone.lng + b] as LatLng, name: zone.name })),
+      )
+      const predDetours = await Promise.all(
+        vias.slice(0, 4).map(({ via, name }) =>
+          osrm([from, via, to], false, signal)
+            .then((r) => r.map((x) => ({ ...x, detourAround: `Historical: ${name}` })))
+            .catch(() => []),
+        ),
+      )
+      detours.push(...predDetours.flat())
+    }
+  }
+
+  return [...base, ...detours]
 }
 
 export type Suggestion = { name: string; detail?: string; lat: number; lng: number }

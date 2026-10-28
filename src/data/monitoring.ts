@@ -1,4 +1,4 @@
-import type { Level } from './sensors'
+import type { Level, Node } from './sensors'
 
 // Same read-only RPC and public browser key as the deployed FloodWatch website.
 export const MONITORING_URL = 'https://vdhlljspghgqkdxsldcx.supabase.co/rest/v1/rpc/get_floodwatch_bench_data'
@@ -102,3 +102,63 @@ export function saveSnapshot(data: MonitoringData, fetchedAt: number) {
 }
 export const formatTime = (s: string | number | null) => s === null ? 'Unknown' :
   new Date(s).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'medium' }) + ' PHT'
+
+// Manually configured station coordinates for stations whose upstream API returns null coordinates.
+// Maps station ID or station code to physical coordinates and verified location names.
+export type ConfiguredLocation = {
+  lat: number
+  lng: number
+  locationName: string
+  shortLocation: string
+}
+
+export const CONFIGURED_STATION_LOCATIONS: Record<string, ConfiguredLocation> = {
+  // ESP32 monitoring station (QC-001)
+  'QC-001': {
+    lat: 14.741361,
+    lng: 121.026694,
+    locationName: 'New Zealand Street, Deparo, Caloocan',
+    shortLocation: 'New Zealand St, Deparo',
+  },
+  'e9b020e8-af79-44f7-b690-4a44bf0f6b0a': {
+    lat: 14.741361,
+    lng: 121.026694,
+    locationName: 'New Zealand Street, Deparo, Caloocan',
+    shortLocation: 'New Zealand St, Deparo',
+  },
+}
+
+export function getStationLocation(station: { id?: string; station_code?: string }): ConfiguredLocation | null {
+  if (station.id && CONFIGURED_STATION_LOCATIONS[station.id]) return CONFIGURED_STATION_LOCATIONS[station.id]
+  if (station.station_code && CONFIGURED_STATION_LOCATIONS[station.station_code]) return CONFIGURED_STATION_LOCATIONS[station.station_code]
+  return null
+}
+
+export function stationsAsNodes(stations?: Station[], now = Date.now(), failed = false): Node[] {
+  if (!stations) return []
+  return stations.flatMap((s) => {
+    const loc = getStationLocation(s)
+    if (!loc) return []
+    const r = s.latest_reading
+    const level: Level = r ? r.water_level : 0
+    const status = stationState(s, now, failed)
+    return [{
+      id: `station-${s.id || s.station_code}`,
+      name: s.name.replace(/FloodWatch(\s+Prototype(\s*\d+)?)?/i, 'Agos Prototype'),
+      area: `${loc.shortLocation} · ${s.station_code}`,
+      lat: loc.lat,
+      lng: loc.lng,
+      x: 0,
+      y: 0,
+      level,
+      source: 'station' as const,
+      rain: r ? r.rain_detected : null,
+      updated: r?.device_observed_at ? Date.parse(r.device_observed_at) : Date.now(),
+      stationCode: s.station_code,
+      stationStatus: status,
+      stationLocationName: loc.locationName,
+      stationRawReading: r,
+      stationObj: s,
+    }]
+  })
+}

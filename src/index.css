@@ -35,8 +35,68 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+@keyframes wave-motion {
+  0% { transform: translateX(0); }
+  50% { transform: translateX(-24px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes rain-drop-fall {
+  0% {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+@keyframes calm-sun-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.92; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.animate-wave-motion {
+  animation: wave-motion 4s ease-in-out infinite;
+}
+
+.animate-rain-drop-1 {
+  animation: rain-drop-fall 1.3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-rain-drop-2 {
+  animation: rain-drop-fall 1.3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation-delay: 0.4s;
+}
+
+.animate-rain-drop-3 {
+  animation: rain-drop-fall 1.3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation-delay: 0.8s;
+}
+
+.animate-calm-sun {
+  animation: calm-sun-pulse 4s ease-in-out infinite;
+  transform-origin: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-up, .animate-fade-in { animation: none; }
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-wave-motion,
+  .animate-rain-drop-1,
+  .animate-rain-drop-2,
+  .animate-rain-drop-3,
+  .animate-calm-sun {
+    animation: none !important;
+  }
 }
 
 @layer base {

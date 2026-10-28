@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEMO_NODES, type Node } from './data/sensors'
-import { fetchMonitoring, loadSnapshot, saveSnapshot, POLL_MS, type Snapshot, type Station } from './data/monitoring'
+import { fetchMonitoring, loadSnapshot, saveSnapshot, POLL_MS, stationsAsNodes, type Snapshot, type Station } from './data/monitoring'
 import { changes, type MonitorEvent } from './data/events'
 import MonitoringPanel from './components/MonitoringPanel'
 import ResearchView from './components/ResearchView'
@@ -16,14 +16,31 @@ import DeveloperView from './components/DeveloperView'
 import ProfileView from './components/ProfileView'
 import AboutView from './components/AboutView'
 import SafetyNotice from './components/SafetyNotice'
+import NearbyBanner from './components/NearbyBanner'
+import FirstLaunchPermissions from './components/FirstLaunchPermissions'
+import LocationReminderBanner from './components/LocationReminderBanner'
+import {
+  type NearbyAlert,
+  evaluateNearbyDetections,
+  sendNearbyNotification,
+  initNotificationChannels,
+} from './data/nearby-alerts'
+import { startDeviceLocationWatch } from './data/device-location'
 import { DEFAULT_SETTINGS, avoidLevel, newUserId, useStored, type Settings, type User } from './data/user'
+import {
+  IconWave,
+  IconNavigate,
+  IconBell,
+  IconLifebuoy,
+  IconUser,
+} from './components/SoftIcons'
 
 const TABS = [
-  { id: 'ride', label: 'Ride', icon: '◉' },
-  { id: 'nav', label: 'Navigate', icon: '➤' },
-  { id: 'alerts', label: 'Alerts', icon: '△' },
-  { id: 'help', label: 'Help', icon: '✚' },
-  { id: 'me', label: 'Profile', icon: '◐' },
+  { id: 'ride', label: 'Ride', icon: IconWave },
+  { id: 'nav', label: 'Navigate', icon: IconNavigate },
+  { id: 'alerts', label: 'Alerts', icon: IconBell },
+  { id: 'help', label: 'Help', icon: IconLifebuoy },
+  { id: 'me', label: 'Profile', icon: IconUser },
 ] as const
 type Tab = (typeof TABS)[number]['id'] | 'settings' | 'about' | 'research' | 'developer'
 
@@ -59,6 +76,9 @@ export default function App() {
   const [tripVersion,setTripVersion] = useState(0)
   const setTrip = (next: Trip) => {setTripState(next);setTripVersion(v=>v+1)}
   const [alerts, setAlerts] = useState<MonitorEvent[]>([])
+  const [nearbyAlerts, setNearbyAlerts] = useState<NearbyAlert[]>([])
+  const [activeBanner, setActiveBanner] = useState<NearbyAlert | null>(null)
+  const trackedInRadius = useRef<Map<string, number>>(new Map())
   const [community, setCommunityState] = useState<FloodReport[]>(loadReports)
   const setCommunity = (r: FloodReport[]) => (setCommunityState(r), saveReports(r))
   const [user, setUser] = useStored<User | null>('fw.user', null)
@@ -67,6 +87,48 @@ export default function App() {
   const update = (p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p }))
   const prefs = useRef(settings)
   prefs.current = settings
+
+  const [permissionsSetup, setPermissionsSetup] = useStored<boolean>('fw.perm_setup.v1', false)
+
+  useEffect(() => {
+    void initNotificationChannels()
+  }, [])
+
+  // Watch device location and evaluate proximity against active rider reports while Agos is open
+  useEffect(() => {
+    if (!settings.nearbyNotify) {
+      trackedInRadius.current.clear()
+      setActiveBanner(null)
+      return
+    }
+
+    const checkLocation = (lat: number, lng: number) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+      const radius = settings.nearbyRadiusM || 1000
+      const { newAlerts, updatedTracked } = evaluateNearbyDetections(
+        [lat, lng],
+        community,
+        radius,
+        trackedInRadius.current,
+      )
+      trackedInRadius.current = updatedTracked
+      if (newAlerts.length > 0) {
+        setNearbyAlerts((prev) => [...newAlerts, ...prev].slice(0, 30))
+        setActiveBanner(newAlerts[0])
+        for (const alert of newAlerts) {
+          sendNearbyNotification(alert)
+        }
+      }
+    }
+
+    const clearWatch = startDeviceLocationWatch(
+      (pos) => checkLocation(pos.latitude, pos.longitude),
+      (err) => console.info('Nearby location watch notice:', err.message),
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+    )
+
+    return clearWatch
+  }, [settings.nearbyNotify, settings.nearbyRadiusM, community])
 
   useEffect(() => {
     const on = () => setTab(readHash())
@@ -126,9 +188,20 @@ export default function App() {
   if (!user) return <WelcomeScreen onDone={(u) => (setUser({ ...u, id: newUserId() }), go('ride'))} />
   const first = user.name.split(' ')[0]
   if (!ack) return <SafetyNotice name={first} onAccept={() => setAck(true)} />
+  if (!permissionsSetup) return <FirstLaunchPermissions onComplete={() => setPermissionsSetup(true)} />
 
   return (
     <div className={tab === 'nav' ? 'flex h-dvh flex-col bg-page' : 'min-h-dvh overflow-x-clip bg-page pb-32'}>
+      {activeBanner && (
+        <NearbyBanner
+          alert={activeBanner}
+          onDismiss={() => setActiveBanner(null)}
+          onViewAlerts={() => {
+            setActiveBanner(null)
+            go('alerts')
+          }}
+        />
+      )}
       {tab !== 'nav' && <header className="shrink-0 bg-navy pt-[var(--safe-top)] text-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-8 sm:py-4">
         <button onClick={() => go('ride')} className="flex items-center gap-2.5 text-left">
@@ -145,12 +218,40 @@ export default function App() {
         </div>
       </header>}
 
-      <main ref={main} tabIndex={-1} aria-label={TABS.find(t => t.id === tab)?.label ?? tab} className={tab === 'nav' ? 'min-h-0 flex-1 pb-[calc(4.75rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]' : 'mx-auto min-w-0 max-w-6xl px-4 pt-6 sm:px-8 sm:pt-12'}>
+      {tab !== 'nav' && <LocationReminderBanner />}
+
+      <main ref={main} tabIndex={-1} aria-label={TABS.find(t => t.id === tab)?.label ?? tab} className={tab === 'nav' ? 'min-h-0 flex-1 pb-[calc(4.75rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]' : 'mx-auto min-w-0 max-w-6xl px-3.5 pt-3.5 sm:px-8 sm:pt-6'}>
         {(
           <div className={tab === 'nav' ? 'h-full animate-fade-in' : 'animate-fade-up'}>
-            {tab === 'ride' && <><MonitoringPanel snapshot={snapshot} now={now} retry={() => setRefreshId(v => v + 1)} /><div className="mb-6 rounded-xl border border-line bg-panel p-4"><button role="switch" aria-checked={demo} onClick={() => setDemo(v => !v)} className="min-h-11 font-semibold text-teal">{demo ? 'Exit map demonstration' : 'Explore map demonstration'}</button><p className="text-sm text-fog">{demo ? 'Illustrative stations and fixed sample levels. Not physical readings.' : 'The real bench station has no coordinates. Its readings are excluded from routes.'}</p></div><RideVerdict nodes={nodes} routeId={routeId} setRouteId={setRouteId} avoid={avoidLevel(settings)} onNavigate={(r) => (setTrip({ from: r.from, to: r.to }), go('nav'))} /></>}
-            {navSeen && <div hidden={tab !== 'nav'} className="h-full min-w-0"><Suspense fallback={<p role="status" className="p-5">Loading the map… Monitoring is still available on Ride.</p>}><Navigate key={settings.mapStyle + tripVersion + demo} nodes={[...nodes, ...reportsAsNodes(community)]} settings={settings} trip={trip} demo={demo} active={tab === 'nav'} /></Suspense></div>}
-            {tab === 'alerts' && <AlertFeed alerts={alerts} notify={settings.notify} setNotify={(notify) => update({ notify })} reports={community} setReports={setCommunity} by={user.name} />}
+            {tab === 'ride' && (
+              <>
+                <MonitoringPanel snapshot={snapshot} now={now} retry={() => setRefreshId((v) => v + 1)} />
+                <RideVerdict
+                  nodes={nodes}
+                  routeId={routeId}
+                  setRouteId={setRouteId}
+                  avoid={avoidLevel(settings)}
+                  onNavigate={(r) => {
+                    setTrip({ from: r.from, to: r.to })
+                    go('nav')
+                  }}
+                />
+              </>
+            )}
+            {navSeen && <div hidden={tab !== 'nav'} className="h-full min-w-0"><Suspense fallback={<p role="status" className="p-5">Loading the map… Monitoring is still available on Ride.</p>}><Navigate key={settings.mapStyle + tripVersion + demo} nodes={[...nodes, ...reportsAsNodes(community), ...stationsAsNodes(snapshot.data?.stations, now, !!snapshot.error || snapshot.cached)]} settings={settings} trip={trip} demo={demo} active={tab === 'nav'} snapshot={snapshot} now={now} /></Suspense></div>}
+            {tab === 'alerts' && (
+              <AlertFeed
+                alerts={alerts}
+                notify={settings.notify}
+                setNotify={(notify) => update({ notify })}
+                reports={community}
+                setReports={setCommunity}
+                by={user.name}
+                nearbyAlerts={nearbyAlerts}
+                nearbyEnabled={settings.nearbyNotify}
+                onClearNearby={() => setNearbyAlerts([])}
+              />
+            )}
             {tab === 'me' && (
               <ProfileView
                 user={user}
@@ -169,9 +270,15 @@ export default function App() {
                 onBack={() => go('me')}
                 onAbout={() => go('about')}
                 onDeveloper={() => go('developer')}
-                onClearAlerts={() => setAlerts([])}
+                onClearAlerts={() => {
+                  setAlerts([])
+                  setNearbyAlerts([])
+                }}
                 onReset={() => setSettings(DEFAULT_SETTINGS)}
                 onForget={() => (setUser(null), setAck(false))}
+                demo={demo}
+                setDemo={setDemo}
+                snapshot={snapshot}
               />
             )}
             {tab === 'about' && <AboutView onBack={() => go('settings')} />}
@@ -186,21 +293,48 @@ export default function App() {
         )}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 pb-[var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))] backdrop-blur">
-        <ul className="mx-auto grid max-w-lg grid-cols-5">
-          {TABS.map((t) => (
-            <li key={t.id}>
-              <button
-                onClick={() => go(t.id)}
-                aria-current={tab === t.id || (t.id === 'me' && (['settings', 'about', 'developer', 'research'].includes(tab)))}
-                className={`flex w-full flex-col items-center gap-1 pb-3.5 pt-3 transition ${tab === t.id || (t.id === 'me' && (['settings', 'about', 'developer', 'research'].includes(tab))) ? 'text-teal' : 'text-fog'}`}
-              >
-                <span className="text-xl leading-none">{t.icon}</span>
-                <span className="text-xs font-semibold">{t.label}</span>
-                {t.id === 'alerts' && alerts.length > 0 && <span className="sr-only">{alerts.length} alerts</span>}
-              </button>
-            </li>
-          ))}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 pb-[max(env(safe-area-inset-bottom,0px),8px)] backdrop-blur">
+        <ul className="mx-auto grid max-w-lg grid-cols-5 px-2">
+          {TABS.map((t) => {
+            const TabIcon = t.icon
+            const isActive =
+              tab === t.id ||
+              (t.id === 'me' && ['settings', 'about', 'developer', 'research'].includes(tab))
+            const hasAlerts = t.id === 'alerts' && (alerts.length > 0 || nearbyAlerts.length > 0)
+
+            return (
+              <li key={t.id}>
+                <button
+                  onClick={() => go(t.id)}
+                  aria-current={isActive}
+                  className="group flex w-full min-h-0 flex-col items-center gap-1 pb-1.5 pt-2 transition select-none"
+                >
+                  <div
+                    className={`relative flex h-8 w-11 items-center justify-center rounded-xl transition-all duration-200 ${
+                      isActive
+                        ? 'bg-teal/15 text-teal shadow-xs'
+                        : 'text-fog group-hover:bg-slate-100 group-hover:text-paper'
+                    }`}
+                  >
+                    <TabIcon className="h-5 w-5" />
+                    {hasAlerts && (
+                      <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-l3 ring-2 ring-white" />
+                    )}
+                  </div>
+                  <span
+                    className={`text-[11px] leading-tight transition-colors ${
+                      isActive ? 'font-bold text-teal' : 'font-semibold text-fog group-hover:text-paper'
+                    }`}
+                  >
+                    {t.label}
+                  </span>
+                  {hasAlerts && (
+                    <span className="sr-only">{alerts.length + nearbyAlerts.length} alerts</span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
         </ul>
       </nav>
     </div>

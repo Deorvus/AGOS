@@ -1,0 +1,11 @@
+Data attribution for evacuation-sites.json
+
+Map data: Copyright OpenStreetMap contributors, distributed under the Open Database License (ODbL) 1.0.
+https://www.openstreetmap.org/copyright
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Source compilation: louislemsic/ph-evac-centers
+https://github.com/louislemsic/ph-evac-centers
+Commit: 08cc5b0e90c76b2a9940cabe2b880d39d62a4dd7, July 21, 2024.
+
+Agos filters explicitly mapped evacuation/emergency-shelter records and represents mapped area shapes by bounding-box center points. Records are not verified entrances. Opening status, capacity and current designation are unknown. The resulting saved-data extract remains under ODbL.

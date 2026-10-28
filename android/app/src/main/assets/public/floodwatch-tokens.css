@@ -1,0 +1,77 @@
+/*
+  FloodWatch shared design tokens — use on floodwatchz.pages.dev and the Rider app.
+  Add to the website <head>:
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+    <link rel="stylesheet" href="/rider/floodwatch-tokens.css">
+*/
+
+:root {
+  /* Ground */
+  --fw-ink: #0b0d0c;
+  --fw-panel: #141816;
+  --fw-line: #2a302d;
+  --fw-fog: #8e9893;
+  --fw-paper: #eef1ec;
+
+  /* Water levels — never change these meanings */
+  --fw-clear: #3ddc84;
+  --fw-l1: #f5d90a;
+  --fw-l2: #ff8a1f;
+  --fw-l3: #ff3b3b;
+
+  --fw-font-display: 'Barlow Condensed', sans-serif;
+  --fw-font-body: 'Barlow', system-ui, sans-serif;
+  --fw-font-mono: 'JetBrains Mono', monospace;
+  --fw-radius: 1rem;
+}
+
+body.fw {
+  background: var(--fw-ink);
+  color: var(--fw-paper);
+  font-family: var(--fw-font-body);
+}
+.fw h1,
+.fw h2,
+.fw h3 {
+  font-family: var(--fw-font-display);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+}
+.fw-label {
+  font-family: var(--fw-font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fw-fog);
+}
+.fw-card {
+  background: var(--fw-panel);
+  border: 1px solid var(--fw-line);
+  border-radius: var(--fw-radius);
+  padding: 1.25rem;
+}
+.fw-banner {
+  background: var(--fw-l1);
+  color: var(--fw-ink);
+  font-family: var(--fw-font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 0.4rem 1rem;
+}
+
+/* Level badges: <span class="fw-level" data-level="2">Level 2</span> */
+.fw-level {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  color: var(--fw-ink);
+  font-family: var(--fw-font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--fw-clear);
+}
+.fw-level[data-level='1'] { background: var(--fw-l1); }
+.fw-level[data-level='2'] { background: var(--fw-l2); }
+.fw-level[data-level='3'] { background: var(--fw-l3); }

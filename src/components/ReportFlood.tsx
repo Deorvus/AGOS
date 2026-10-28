@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LEVELS } from '../data/sensors'
 import { geocode, type Suggestion } from '../data/routing'
 import { compressImage, placeName, stamp, type FloodReport } from '../data/reports'
+import { getDeviceLocation, isLocationGranted, requestLocationPermission } from '../data/device-location'
 
 const MAX_PHOTOS = 3
 
@@ -18,17 +19,24 @@ export default function ReportFlood({ by, onSubmit, onClose }: { by: string; onS
   const [note, setNote] = useState('')
   const [err, setErr] = useState('')
 
-  const useGps = () => {
+  const useGps = async () => {
     setLocState('finding')
-    navigator.geolocation.getCurrentPosition(
-      async (p) => {
-        const { latitude: lat, longitude: lng } = p.coords
-        setSpot({ lat, lng, place: await placeName(lat, lng) })
-        setLocState('idle')
-      },
-      () => setLocState('error'),
-      { enableHighAccuracy: true, timeout: 12000 },
-    )
+    try {
+      const granted = await isLocationGranted()
+      if (!granted) {
+        const ok = await requestLocationPermission()
+        if (!ok) {
+          setLocState('error')
+          return
+        }
+      }
+      const c = new AbortController()
+      const [lat, lng] = await getDeviceLocation(c.signal)
+      setSpot({ lat, lng, place: await placeName(lat, lng) })
+      setLocState('idle')
+    } catch {
+      setLocState('error')
+    }
   }
 
   const search = async (v: string) => {

@@ -1,4 +1,4 @@
-import { getDeviceLocation } from '../data/device-location'
+import { getDeviceLocation, isLocationGranted, requestLocationPermission } from '../data/device-location'
 import LocationSearchInput from './LocationSearchInput'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { findEvacuationSites, savedEvacuationSites, searchAreas, type SearchArea, type EvacuationSite } from '../data/evacuation'
@@ -41,12 +41,27 @@ export default function EvacuationSearch({ onNavigate, active = true }: { active
     try { const rows = await searchAreas(query,c.signal); if (!c.signal.aborted) { setAreas(rows); setState('idle'); if (!rows.length) setMessage('No matching Philippine location found. Try a city or municipality with its province.') } }
     catch (e) { if (!c.signal.aborted) { setMessage(e instanceof Error ? e.message : 'Location search unavailable.'); setState('error') } }
   }
-  const locate = () => {
+  const locate = async () => {
     const c = begin(); setSelected(null)
-    if (!navigator.geolocation) { setMessage('Location is unavailable. Enter your city or barangay instead.'); setState('error'); return }
     setState('locating')
-    getDeviceLocation(c.signal).then(at => {if(!c.signal.aborted) void find({id:'device',label:'Your current location',at})}).catch(e => {if(!c.signal.aborted){setMessage(e instanceof Error?e.message:'Location unavailable. Enter your city instead.');setState('error')}})
-
+    try {
+      const granted = await isLocationGranted()
+      if (!granted) {
+        const ok = await requestLocationPermission()
+        if (!ok) {
+          setMessage('Location permission was not granted. Enter your city or barangay instead.')
+          setState('error')
+          return
+        }
+      }
+      const at = await getDeviceLocation(c.signal)
+      if (!c.signal.aborted) void find({ id: 'device', label: 'Your current location', at })
+    } catch (e) {
+      if (!c.signal.aborted) {
+        setMessage(e instanceof Error ? e.message : 'Location unavailable. Enter your city instead.')
+        setState('error')
+      }
+    }
   }
   const busy = ['places','locating','searching'].includes(state)
   return <section id="help-evacuations" tabIndex={-1} aria-labelledby="evacuation-title" className="rounded-2xl border border-line bg-panel p-5">

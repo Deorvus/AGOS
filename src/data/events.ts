@@ -15,7 +15,8 @@ export function changes(previous: Station[], next: Station[], now: number, min: 
         Date.parse(b.received_at) <= Date.parse(a.received_at) ||
         Date.parse(b.device_observed_at!) <= Date.parse(a.device_observed_at!)) return []
     const events: MonitorEvent[] = []
-    const base = { node: s.station_code, name: s.name, from: a.water_level, to: b.water_level,
+    const stationName = s.name.replace(/FloodWatch(\s+Prototype(\s*\d+)?)?/i, 'Agos Prototype')
+    const base = { node: s.station_code, name: stationName, from: a.water_level, to: b.water_level,
       rain: b.rain_detected, at: Date.parse(b.device_observed_at!), receivedAt: b.received_at,
       source: 'bench' as const, delivery: 'In-app only' as const }
     if (a.water_level !== b.water_level && Math.max(a.water_level, b.water_level) >= min)

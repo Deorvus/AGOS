@@ -64,11 +64,10 @@ export default function GoogleLink({ user, onLink, onUnlink }: { user: User; onL
 
   return (
     <div>
-      <p className="text-sm leading-relaxed text-fog">Optional. Fill in your name and photo from Google and keep your rider ID if you change phones.</p>
       {CLIENT_ID ? (
-        <div ref={slot} className="mt-4 min-h-11" />
+        <div ref={slot} className="min-h-11" />
       ) : (
-        <button disabled className="mt-4 flex items-center gap-3 rounded-full border border-line bg-panel px-5 py-2.5 text-sm font-semibold opacity-60" title="Google sign-in isn't set up yet">
+        <button disabled className="flex items-center gap-3 rounded-full border border-line bg-panel px-5 py-2.5 text-sm font-semibold opacity-60" title="Google sign-in isn't set up yet">
           <GoogleG /> Continue with Google
           <span className="text-xs font-normal text-fog">· coming soon</span>
         </button>

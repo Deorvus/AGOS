@@ -2,10 +2,48 @@ import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
+import fs from 'node:fs'
 import { agosPwa } from './pwa-plugin'
 
 import siteConfiguration from './.figma/make/site.json'
 
+function maplibreWorkerPlugin(): Plugin {
+  return {
+    name: 'vite-plugin-maplibre-worker',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url) return next()
+        const cleanUrl = req.url.split('?')[0]
+        if (cleanUrl.endsWith('maplibre-gl-worker.mjs') || cleanUrl.endsWith('maplibre-gl-worker-dev.mjs')) {
+          const workerPath = path.resolve(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs')
+          if (fs.existsSync(workerPath)) {
+            res.setHeader('Content-Type', 'text/javascript')
+            res.setHeader('Cache-Control', 'no-cache')
+            fs.createReadStream(workerPath).pipe(res)
+            return
+          }
+        }
+        next()
+      })
+    },
+    generateBundle() {
+      const workerPath = path.resolve(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs')
+      if (fs.existsSync(workerPath)) {
+        const content = fs.readFileSync(workerPath)
+        this.emitFile({
+          type: 'asset',
+          fileName: 'maplibre-gl-worker.mjs',
+          source: content,
+        })
+        this.emitFile({
+          type: 'asset',
+          fileName: 'assets/maplibre-gl-worker.mjs',
+          source: content,
+        })
+      }
+    },
+  }
+}
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -19,32 +57,37 @@ export default defineConfig(({ mode }) => {
       minify: !emitSourcemaps,
     },
     plugins: [
-react(),
+      react(),
       tailwindcss(),
       agosPwa(),
+      maplibreWorkerPlugin(),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
     ],
+    optimizeDeps: {
+      include: ['maplibre-gl', '@maplibre/maplibre-gl-leaflet'],
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
     },
     server: {
-      host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
-      port: parseInt(process.env.PORT || '8443'),
-      strictPort: true,
+      host: '0.0.0.0',
+      port: parseInt(process.env.PORT || '3000'),
+      allowedHosts: true,
+      strictPort: false,
       watch: {
         ignored: [
           '**/.figma/**',
-],
+        ],
       },
     },
     preview: {
-      host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
-      port: parseInt(process.env.PORT || '8443'),
+      host: '0.0.0.0',
+      port: parseInt(process.env.PORT || '3000'),
     },
   }
 })

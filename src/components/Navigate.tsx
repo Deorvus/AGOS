@@ -1,15 +1,34 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import * as maplibregl from 'maplibre-gl'
 import { maplibreGL } from '@maplibre/maplibre-gl-leaflet'
 import 'maplibre-gl/dist/maplibre-gl.css'
+
+// Ensure MapLibre Web Worker loads reliably in Vite dev server, prod builds, and Capacitor Android
+if (typeof window !== 'undefined') {
+  try {
+    const base = import.meta.env.BASE_URL || '/'
+    const cleanBase = base.endsWith('/') ? base : `${base}/`
+    maplibregl.setWorkerUrl(`${cleanBase}maplibre-gl-worker.mjs`)
+  } catch {
+    // ignore
+  }
+}
 import { LEVELS, PLACES, type Level, type Node } from '../data/sensors'
 import { avoidLevel, savedPlace, type Settings } from '../data/user'
-import { getDeviceLocation, locationError } from '../data/device-location'
+import {
+  getDeviceLocation,
+  locationError,
+  startDeviceLocationWatch,
+  isLocationGranted,
+  requestLocationPermission,
+} from '../data/device-location'
 import LocationSheet, { locationAllowed } from './LocationSheet'
 import PlaceDetails from './PlaceDetails'
 import { CATEGORIES, findNearby, type Category, type Poi } from '../data/nearby'
 import { FLOOD_RADIUS, distM, evaluate, geocode, planRoutes, rank, type LatLng, type RawRoute, type Step, type Suggestion, setSearchNear } from '../data/routing'
+import { stationState, WATER_LABELS, formatTime, type Snapshot } from '../data/monitoring'
 
 // Same status colours as floodwatchz.pages.dev (domain.js COLORS)
 const HEX = ['#168260', '#9b7000', '#ca5b13', '#c13c49']
@@ -211,13 +230,42 @@ const card = 'pointer-events-auto rounded-2xl bg-panel shadow-[0_16px_40px_-16px
 
 export type Trip = { from: Place | null; to: Place; autoPlan?: boolean; evacuation?: boolean }
 
-export default function Navigate({ nodes, settings, trip, demo = false, active = true }: { nodes: Node[]; settings: Settings; trip?: Trip | null; demo?: boolean; active?: boolean }) {
+export default function Navigate({
+  nodes,
+  settings,
+  trip,
+  demo = false,
+  active = true,
+  snapshot,
+  now = Date.now(),
+}: {
+  nodes: Node[]
+  settings: Settings
+  trip?: Trip | null
+  demo?: boolean
+  active?: boolean
+  snapshot?: Snapshot
+  now?: number
+}) {
   const avoid = avoidLevel(settings)
   const mapEl = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map>(null)
   const sensorLayer = useRef<L.LayerGroup>(null)
   const routeLayer = useRef<L.LayerGroup>(null)
   const meMarker = useRef<L.Marker>(null)
+  const [selectedStation, setSelectedStation] = useState<Node | null>(null)
+  const [showLegend, setShowLegend] = useState(false)
+
+  const stationNode = useMemo(() => nodes.find((n) => n.source === 'station'), [nodes])
+  const prototypeStation = snapshot?.data?.stations?.find(
+    (s) => s.station_code === 'QC-001' || s.id === 'e9b020e8-af79-44f7-b690-4a44bf0f6b0a',
+  ) ?? snapshot?.data?.stations?.[0]
+  const prototypeStatus = useMemo(() => {
+    if (prototypeStation) {
+      return stationState(prototypeStation, now, !!snapshot?.error || snapshot?.cached)
+    }
+    return stationNode?.stationStatus ?? { label: 'Receiving', current: true }
+  }, [prototypeStation, now, snapshot?.error, snapshot?.cached, stationNode])
 
   const home = savedPlace(settings, 'home')
   const work = savedPlace(settings, 'work')
@@ -226,6 +274,10 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
   const [raw, setRaw] = useState<RawRoute[]>([])
   const [picked, setPicked] = useState<LatLng[] | null>(null) // coords identity of the chosen route
   const [stage, setStage] = useState<'plan' | 'preview' | 'nav'>('plan')
+  const [panelExpanded, setPanelExpanded] = useState(Boolean(trip?.to))
+  useEffect(() => {
+    if (trip?.to) setPanelExpanded(true)
+  }, [trip?.to])
   const [loading, setLoading] = useState(false)
   const [phase, setPhase] = useState<'location' | 'routes'>('routes')
   const task = useRef<AbortController | null>(null)
@@ -297,13 +349,21 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
     if (!mapEl.current || map.current) return
     const m = L.map(mapEl.current, { zoomControl: false, attributionControl: true }).setView(trip?.evacuation ? [trip.to.lat, trip.to.lng] : [14.66, 121.045], 12)
     // Esri basemaps: keyless and not referrer-blocked (OSM's own servers block embedded previews)
-    L.tileLayer(TILES[settings.mapStyle], {
+    const styleKey = settings.mapStyle === 'dark' ? 'dark' : 'light'
+    L.tileLayer(TILES[styleKey], {
       attribution: '© OpenFreeMap © OpenStreetMap · Esri',
-      maxZoom: settings.mapStyle === 'dark' ? 16 : 19,
+      maxZoom: styleKey === 'dark' ? 16 : 19,
     }).addTo(m)
-    const gl = maplibreGL({ style: STYLES[settings.mapStyle] }).addTo(m)
-    const glMap = gl.getMaplibreMap()
-    glMap.on('style.load', () => restyle(glMap, settings.mapStyle))
+    try {
+      const gl = maplibreGL({ style: STYLES[styleKey] }).addTo(m)
+      const glMap = gl.getMaplibreMap()
+      glMap.on('error', (err: unknown) => {
+        console.warn('MapLibre GL layer notice:', err)
+      })
+      glMap.on('style.load', () => restyle(glMap, styleKey))
+    } catch (e) {
+      console.warn('MapLibre layer failed to initialize, continuing with raster basemap:', e)
+    }
     routeLayer.current = L.layerGroup().addTo(m)
     sensorLayer.current = L.layerGroup().addTo(m)
     poiLayer.current = L.layerGroup().addTo(m)
@@ -325,17 +385,54 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
       if (n.level >= avoid)
         L.circle([n.lat, n.lng], { radius: FLOOD_RADIUS, color: HEX[n.level], weight: 1, fillOpacity: 0.2, className: 'animate-pulse' }).addTo(g)
       const rider = n.area === 'Rider report'
-      L.marker([n.lat, n.lng], { icon: pin(HEX[n.level], rider ? '◎' : GLYPH[n.level], n.level > 0 ? 34 : 26) })
+      const isStation = n.source === 'station'
+      const marker = L.marker([n.lat, n.lng], {
+        icon: pin(
+          HEX[n.level],
+          isStation ? '≋' : rider ? '◎' : GLYPH[n.level],
+          isStation ? 36 : n.level > 0 ? 34 : 26,
+          isStation ? (prototypeStatus.current ? '#007a85' : '#b45309') : '#fff',
+        ),
+        title: isStation ? 'Agos ESP32 Prototype · Click to view station data' : n.name,
+      })
+
+      if (isStation) {
+        marker.on('click', () => {
+          setSelectedStation(n)
+        })
+      }
+
+      const cardHtml = infoCard(
+        HEX[n.level],
+        isStation ? `ESP32 Station · ${prototypeStatus.label}` : rider ? `Flooding · ${LEVELS[n.level].short}` : LEVELS[n.level].label,
+        n.name,
+        isStation
+          ? `${n.stationLocationName || 'New Zealand Street, Deparo, Caloocan'}<br>Status: <strong>${prototypeStatus.label}</strong><br>Water: ${LEVELS[n.level].label}<br>Rain: ${n.rain === null ? 'unknown' : n.rain ? 'detected' : 'not detected'}`
+          : rider ? `User-submitted · this device only<br>${ago(n.updated)}` : `Demonstration point · fixed sample value<br>Rain: ${n.rain === null ? 'unknown' : n.rain ? 'detected' : 'not detected'}`,
+        isStation
+          ? `Status: ${prototypeStatus.label} · Physical prototype hardware`
+          : rider ? 'Unverified local report. Not a sensor measurement.' : 'Fixed illustrative category. Not actual road conditions.',
+      )
+
+      marker
         .bindPopup(
-          infoCard(
-            HEX[n.level],
-            rider ? `Flooding · ${LEVELS[n.level].short}` : LEVELS[n.level].label,
-            n.name,
-            rider ? `User-submitted · this device only<br>${ago(n.updated)}` : `Demonstration point · fixed sample value<br>Rain: ${n.rain === null ? 'unknown' : n.rain ? 'detected' : 'not detected'}`,
-            rider ? 'Unverified local report. Not a sensor measurement.' : 'Fixed illustrative category. Not actual road conditions.',
-          ),
+          isStation
+            ? `<div class="station-popup-wrap">${cardHtml}<button type="button" class="agos-open-station-btn" style="margin-top:8px;display:block;width:100%;padding:7px 10px;background:#007a85;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-align:center;">Inspect Station Data ↗</button></div>`
+            : cardHtml,
           { className: 'fw-popup', closeButton: true, maxWidth: 280 },
         )
+        .on('popupopen', (e) => {
+          if (isStation) {
+            const btn = e.popup.getElement()?.querySelector('.agos-open-station-btn')
+            if (btn) {
+              btn.addEventListener('click', (ev) => {
+                ev.stopPropagation()
+                setSelectedStation(n)
+                marker.closePopup()
+              })
+            }
+          }
+        })
         .addTo(g)
     })
     reports.forEach((r) =>
@@ -351,11 +448,55 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
     if (!g || !map.current) return
     g.clearLayers()
     if (stage === 'plan') return
-    if (stage === 'preview')
+    if (stage === 'preview') {
       routes.forEach((r) => {
         if (r === sel) return
-        L.polyline(r.coords, { color: '#9fb3bd', weight: 7, opacity: 0.85 }).on('click', () => setPicked(r.coords)).addTo(g)
+        // Base alternate route polyline
+        L.polyline(r.coords, { color: '#9fb3bd', weight: 7, opacity: 0.85 })
+          .on('click', () => setPicked(r.coords))
+          .addTo(g)
+
+        // Highlight predicted flood-prone segments in a distinct color along suggested alternative routes
+        r.predictedSegments?.forEach((seg) => {
+          // Distinct hazard casing for contrast on alternate routes
+          L.polyline(seg.coords, {
+            color: '#c2410c',
+            weight: 9,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round',
+          })
+            .on('click', () => setPicked(r.coords))
+            .addTo(g)
+
+          // Distinct safety orange core line
+          L.polyline(seg.coords, {
+            color: '#ea580c',
+            weight: 6,
+            opacity: 1,
+            lineCap: 'round',
+            lineJoin: 'round',
+          })
+            .on('click', () => setPicked(r.coords))
+            .addTo(g)
+
+          // Dashed accent stripe
+          L.polyline(seg.coords, {
+            color: '#ffedd5',
+            weight: 2.5,
+            dashArray: '5, 5',
+            opacity: 1,
+            lineCap: 'round',
+          })
+            .bindTooltip(
+              `⚡ Predicted flood-prone corridor on alternative route: <strong>${seg.zone.name}</strong><br><span class="text-[11px] text-amber-100">${seg.zone.typicalDepth} · ${seg.zone.historicalCause}</span><br><em class="text-[10px] text-teal-200">Click to switch to this route</em>`,
+              { direction: 'top', className: 'font-semibold text-xs leading-snug', sticky: true },
+            )
+            .on('click', () => setPicked(r.coords))
+            .addTo(g)
+        })
       })
+    }
     if (sel) {
       L.polyline(sel.coords, { color: '#0b4f9c', weight: 11, lineCap: 'round', lineJoin: 'round' }).addTo(g)
       L.polyline(sel.coords, { color: '#1a73e8', weight: 7, lineCap: 'round', lineJoin: 'round' }).addTo(g)
@@ -368,6 +509,54 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
           sel.coords.forEach((c) => (distM(c, [n.lat, n.lng]) < FLOOD_RADIUS ? run.push(c) : flush()))
           flush()
         })
+      // Distinct predicted flood-prone segment highlight along the active route
+      sel.predictedSegments?.forEach((seg) => {
+        // High-contrast casing
+        L.polyline(seg.coords, {
+          color: '#7c2d12',
+          weight: 12,
+          lineCap: 'round',
+          lineJoin: 'round',
+          opacity: 0.95,
+        }).addTo(g)
+        // Distinct hazard color: Vibrant safety orange (#ea580c)
+        L.polyline(seg.coords, {
+          color: '#ea580c',
+          weight: 8,
+          lineCap: 'round',
+          lineJoin: 'round',
+          opacity: 1,
+        }).addTo(g)
+        // Warning dash accent
+        L.polyline(seg.coords, {
+          color: '#fef08a',
+          weight: 3,
+          dashArray: '6, 6',
+          lineCap: 'round',
+          opacity: 1,
+        })
+          .bindTooltip(
+            `⚡ Predicted Flood-Prone Segment: <strong>${seg.zone.name}</strong><br><span class="text-[11px] text-amber-100">${seg.zone.typicalDepth} · ${seg.zone.historicalCause}</span>`,
+            { direction: 'top', className: 'font-semibold text-xs leading-snug', sticky: true },
+          )
+          .addTo(g)
+      })
+      // Highlight historical flood zones crossing or near this route (area circle)
+      sel.predictedHotspots?.forEach((h) => {
+        L.circle([h.lat, h.lng], {
+          radius: 260,
+          color: '#d97706',
+          weight: 2,
+          dashArray: '5, 5',
+          fillColor: '#f59e0b',
+          fillOpacity: 0.15,
+        })
+          .bindTooltip(`⚡ Historical Flood Hazard: ${h.name} (${h.typicalDepth})`, {
+            direction: 'top',
+            className: 'text-xs font-semibold',
+          })
+          .addTo(g)
+      })
       const end = sel.coords[sel.coords.length - 1]
       L.circleMarker(end, { radius: 9, color: '#fff', weight: 3, fillColor: '#102b3b', fillOpacity: 1 }).addTo(g)
     }
@@ -496,7 +685,7 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
       const [a, b] = await Promise.all([start ?? resolve(from,c.signal), resolve(to_,c.signal)])
       if (c.signal.aborted) return
       setPhase('routes')
-      const r = await planRoutes(a, b, nodes, avoid, c.signal)
+      const r = await planRoutes(a, b, nodes, avoid, c.signal, settings.predictiveRouting !== false)
       if (c.signal.aborted) return
       if (!r.length) throw new Error('No route found')
       setRaw(r)
@@ -539,19 +728,19 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
   useEffect(() => {
     if (!active || stage !== 'nav' || mode !== 'gps') return
     let prev: LatLng | null = null
-    const id = navigator.geolocation.watchPosition(
-      (p) => {
-        const cur: LatLng = [p.coords.latitude, p.coords.longitude]
-        if (p.coords.heading != null && !Number.isNaN(p.coords.heading)) setHeading(p.coords.heading)
+    const clearWatch = startDeviceLocationWatch(
+      (pos) => {
+        const cur: LatLng = [pos.latitude, pos.longitude]
+        if (pos.heading != null && !Number.isNaN(pos.heading)) setHeading(pos.heading)
         else if (prev && distM(prev, cur) > 3) setHeading(bearing(prev, cur))
-        setSpeed(p.coords.speed != null ? p.coords.speed * 3.6 : null)
+        setSpeed(pos.speed != null ? pos.speed * 3.6 : null)
         prev = cur
         setMe(cur)
       },
-      e => setError(locationError(e.code)),
+      (err) => setError(err.message),
       { enableHighAccuracy: true },
     )
-    return () => navigator.geolocation.clearWatch(id)
+    return clearWatch
   }, [stage, mode, active])
 
   // Simulated ride along the selected route (for demos without moving)
@@ -617,8 +806,24 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
     if (voice && stage === 'nav') speak(msg)
   }, [routes, sel, picked, voice, stage, avoid])
 
-  const status = (r: typeof sel) => (r.worst >= avoid ? 'Meets avoidance preference' : r.worst > 0 ? 'Reported category nearby' : 'No reports nearby · conditions unknown')
-  const rerouted = sel && fastest && sel !== fastest && fastest.worst > sel.worst
+  const status = (r: typeof sel) =>
+    r.worst >= avoid
+      ? 'Meets avoidance preference'
+      : r.worst > 0
+        ? 'Reported category nearby'
+        : r.isPredictiveAlternative
+          ? 'Suggested alternative · avoids historical basin'
+          : r.predictedHotspots && r.predictedHotspots.length > 0
+            ? `Historical flood hazard (${r.predictedHotspots[0].name.split('·')[0].trim()})`
+            : 'No reports nearby · conditions unknown'
+  const rerouted =
+    sel &&
+    fastest &&
+    sel !== fastest &&
+    (fastest.worst > sel.worst ||
+      (fastest.worst === sel.worst &&
+        fastest.predictiveRisk === 'High' &&
+        sel.predictiveRisk !== 'High'))
 
   function report(level: Level) {
     if (!me) return
@@ -645,9 +850,36 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
 
       {/* Map controls */}
       {stage !== 'nav' && (
-        <div className="absolute bottom-6 right-3 z-[450] flex flex-col items-center gap-3 sm:right-5">
+        <div className="absolute bottom-24 right-3 z-[510] flex flex-col items-center gap-3 sm:bottom-6 sm:right-5">
           <button
-            onClick={async () => { if (me) { map.current?.flyTo(me,16); return }; task.current?.abort(); const c = new AbortController(); task.current=c; setLoading(true);setPhase('location');setError('');try {const at=await getDeviceLocation(c.signal);if(!c.signal.aborted){setMe(at);map.current?.flyTo(at,16)}}catch(e){if(!c.signal.aborted)setError((e as Error).message)}finally{if(task.current===c)setLoading(false)} }}
+            onClick={async () => {
+              if (me) {
+                map.current?.flyTo(me, 16)
+                return
+              }
+              const granted = await isLocationGranted()
+              if (!granted) {
+                setAskLoc(true)
+                return
+              }
+              task.current?.abort()
+              const c = new AbortController()
+              task.current = c
+              setLoading(true)
+              setPhase('location')
+              setError('')
+              try {
+                const at = await getDeviceLocation(c.signal)
+                if (!c.signal.aborted) {
+                  setMe(at)
+                  map.current?.flyTo(at, 16)
+                }
+              } catch (e) {
+                if (!c.signal.aborted) setError((e as Error).message)
+              } finally {
+                if (task.current === c) setLoading(false)
+              }
+            }}
             aria-label="Show my location"
             className="grid h-12 w-12 place-items-center rounded-full bg-panel text-xl text-teal shadow-lg ring-1 ring-line transition active:scale-95"
           >
@@ -663,23 +895,320 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
 
       {/* Map legend */}
       {stage !== 'nav' && (
-        <div className="absolute right-4 top-24 z-[400] hidden flex-col gap-2 rounded-xl bg-panel/90 px-4 py-3 text-xs font-semibold text-fog shadow-lg backdrop-blur sm:flex">
-          {([0, 1, 2, 3] as const).map((l) => (
-            <span key={l} className="flex items-center gap-2">
-              <i className={`h-2.5 w-2.5 rounded-full ${LEVELS[l].color}`} />
-              {LEVELS[l].label}
+        <div className="absolute right-3 top-20 z-[400] flex flex-col items-end gap-1.5 sm:right-4 sm:top-24">
+          <button
+            type="button"
+            onClick={() => setShowLegend((v) => !v)}
+            aria-label="Toggle map legend and prototype status"
+            aria-expanded={showLegend}
+            className="flex items-center gap-1.5 rounded-full border border-line bg-panel/95 px-3 py-1.5 text-xs font-bold text-paper shadow-md backdrop-blur transition active:scale-95 sm:hidden"
+          >
+            <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-teal text-[9px] text-white">≋</span>
+            <span>Legend</span>
+            <span
+              className={`h-2 w-2 rounded-full ${
+                prototypeStatus.current
+                  ? 'bg-teal animate-pulse'
+                  : prototypeStatus.label === 'Stale'
+                  ? 'bg-amber-500'
+                  : 'bg-rose-500'
+              }`}
+            />
+          </button>
+
+          <div
+            className={`${
+              showLegend ? 'flex' : 'hidden'
+            } w-64 flex-col gap-2 rounded-2xl border border-line bg-panel/95 p-3.5 text-xs font-semibold text-fog shadow-xl backdrop-blur sm:flex`}
+          >
+            <div className="flex items-center justify-between pb-1 border-b border-line/60">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-paper">Map Legend</span>
+              <span className="text-[10px] text-fog">Roads & Sensors</span>
+            </div>
+            {([0, 1, 2, 3] as const).map((l) => (
+              <span key={l} className="flex items-center gap-2">
+                <i className={`h-2.5 w-2.5 rounded-full ${LEVELS[l].color}`} />
+                <span className="text-paper">{LEVELS[l].label}</span>
+                <span className="ml-auto text-[10px] text-fog">{LEVELS[l].short}</span>
+              </span>
+            ))}
+            <span className="flex items-center gap-2 border-t border-line/60 pt-1.5 text-orange-600">
+              <span className="h-2 w-4 rounded-sm bg-[#ea580c] shadow-sm" />
+              <span>Predicted flood-prone</span>
             </span>
-          ))}
+
+            {/* Prototype Station in Legend reflecting real prototype status */}
+            <div className="border-t border-line/60 pt-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const targetNode = stationNode || nodes.find((n) => n.source === 'station')
+                  if (targetNode) {
+                    map.current?.flyTo([targetNode.lat, targetNode.lng], 16, { duration: 0.6 })
+                    setSelectedStation(targetNode)
+                  }
+                }}
+                className="group flex w-full flex-col gap-1 rounded-xl bg-page/60 p-2 text-left transition hover:bg-page cursor-pointer ring-1 ring-line/50 hover:ring-teal/50"
+                aria-label="Agos ESP32 Prototype station: tap to see live station data"
+              >
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="flex items-center gap-1.5 font-bold text-paper">
+                    <span className="grid h-4 w-4 place-items-center rounded-full bg-teal text-[10px] text-white">≋</span>
+                    <span>ESP32 Prototype</span>
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      prototypeStatus.current
+                        ? 'bg-teal/15 text-teal ring-1 ring-teal/30'
+                        : prototypeStatus.label === 'Stale'
+                        ? 'bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/30'
+                        : 'bg-rose-500/15 text-rose-600 ring-1 ring-rose-500/30'
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        prototypeStatus.current
+                          ? 'bg-teal animate-pulse'
+                          : prototypeStatus.label === 'Stale'
+                          ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                      }`}
+                    />
+                    {prototypeStatus.label}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-fog">
+                  <span className="truncate max-w-[130px]">{stationNode?.stationLocationName ? 'Deparo, Caloocan' : 'New Zealand St'}</span>
+                  <span className="font-semibold text-paper">
+                    {stationNode ? LEVELS[stationNode.level].short : 'BELOW LOW'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-semibold text-teal group-hover:underline">
+                  Tap to see station data ↗
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detailed Station Data Modal / Sheet */}
+      {selectedStation && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedStation(null)
+          }}
+          className="fixed inset-0 z-[600] flex items-center justify-center bg-black/60 p-3 sm:p-5 backdrop-blur-xs overflow-y-auto pb-[calc(5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] sm:pb-5 animate-fade-in"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="station-dialog-title"
+            className="relative flex flex-col w-full max-w-md rounded-2xl border border-line bg-panel shadow-2xl animate-fade-up max-h-[78dvh] sm:max-h-[74vh] overflow-hidden"
+          >
+            {/* Header: fixed / shrink-0 */}
+            <div className="shrink-0 flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5 sm:py-3.5 bg-panel">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-teal text-base text-white font-bold shadow-sm">
+                  ≋
+                </span>
+                <div className="min-w-0">
+                  <h3 id="station-dialog-title" className="truncate text-base font-extrabold text-paper sm:text-lg">
+                    {selectedStation.name}
+                  </h3>
+                  <p className="truncate text-[11px] text-fog">
+                    {selectedStation.stationCode || 'QC-001'} · ESP32 IoT Monitoring Station
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedStation(null)}
+                aria-label="Close station data"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line bg-page text-xs font-bold text-fog transition hover:border-fog hover:text-paper active:scale-95"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Body: flexible, scrollable, with compact telemetry stats */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-3">
+              {/* Hardware & connectivity status badge */}
+              <div className="flex items-center justify-between rounded-xl bg-page/70 p-2.5 ring-1 ring-line/60">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      prototypeStatus.current
+                        ? 'bg-teal animate-pulse'
+                        : prototypeStatus.label === 'Stale'
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500'
+                    }`}
+                  />
+                  <span className="truncate text-xs font-semibold text-paper">
+                    Hardware Status: <strong className="text-paper">{prototypeStatus.label}</strong>
+                  </span>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                    prototypeStatus.current
+                      ? 'bg-teal/15 text-teal ring-1 ring-teal/30'
+                      : prototypeStatus.label === 'Stale'
+                      ? 'bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/30'
+                      : 'bg-rose-500/15 text-rose-600 ring-1 ring-rose-500/30'
+                  }`}
+                >
+                  {prototypeStatus.current ? 'Live Telemetry' : prototypeStatus.label}
+                </span>
+              </div>
+
+              {/* Sensor readings telemetry grid */}
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <div className="rounded-xl border border-line bg-page/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-fog">Water Level</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${LEVELS[selectedStation.level].color}`} />
+                    <span className="text-base font-extrabold text-paper">
+                      {LEVELS[selectedStation.level].label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-fog leading-relaxed">
+                    {WATER_LABELS[selectedStation.level]}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-line bg-page/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-fog">Rain Sensor</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-base leading-none">{selectedStation.rain ? '☂' : '☼'}</span>
+                    <span className="text-base font-extrabold text-paper">
+                      {selectedStation.rain ? 'Detected' : 'Not detected'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-fog leading-relaxed">
+                    {selectedStation.rain
+                      ? 'Precipitation active at station.'
+                      : 'No rain contact currently registered.'}
+                  </p>
+                </div>
+
+                <div className="sm:col-span-2 rounded-xl border border-line bg-page/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-fog">Location & Coordinates</p>
+                  <p className="mt-1 text-xs font-semibold text-paper break-words">
+                    {selectedStation.stationLocationName || 'New Zealand Street, Deparo, Caloocan'}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[11px] text-fog">
+                    Lat: {selectedStation.lat.toFixed(6)} · Lng: {selectedStation.lng.toFixed(6)}
+                  </p>
+                </div>
+
+                <div className="sm:col-span-2 rounded-xl border border-line bg-page/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-fog">Timestamp & Observation Age</p>
+                  <p className="mt-1 text-xs font-semibold text-paper">
+                    {formatTime(selectedStation.updated)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-fog">
+                    Age: {ago(selectedStation.updated)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Station Action Buttons: Dedicated sticky footer so it is ALWAYS visible and never cut off */}
+            <div className="shrink-0 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-panel px-4 py-3 sm:px-5 sm:py-3.5">
+              <button
+                type="button"
+                onClick={() => {
+                  map.current?.flyTo([selectedStation.lat, selectedStation.lng], 17, { duration: 0.6 })
+                  setSelectedStation(null)
+                }}
+                className="rounded-xl border border-line bg-page px-3.5 py-2 text-xs font-semibold text-paper transition hover:border-fog active:scale-95"
+              >
+                ⌖ Center Map Here
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetDest = {
+                    name: `Station: ${selectedStation.stationLocationName || selectedStation.name}`,
+                    lat: selectedStation.lat,
+                    lng: selectedStation.lng,
+                  }
+                  setTo(targetDest)
+                  setSelectedStation(null)
+                  plan(undefined, targetDest)
+                }}
+                className="rounded-xl bg-teal px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#005c66] active:scale-95"
+              >
+                ➤ Navigate to Station
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       <div className="pointer-events-none absolute inset-0 z-[500] flex min-w-0 flex-col gap-3 overflow-y-auto p-3 pt-[calc(var(--safe-top)+0.75rem)] pl-[max(0.75rem,var(--safe-area-inset-left,env(safe-area-inset-left,0px)))] pr-[max(0.75rem,var(--safe-area-inset-right,env(safe-area-inset-right,0px)))] sm:w-[460px] sm:gap-4 sm:p-5 sm:pt-[calc(var(--safe-top)+1.25rem)]">
-        <details className="pointer-events-auto shrink-0 rounded-xl border border-line bg-white/95 p-3 text-sm text-paper"><summary className="min-h-11 cursor-pointer font-semibold">{demo ? 'Demo map — sample readings only' : 'Current road conditions unknown'}</summary><p className="mt-2 text-xs leading-relaxed">No deployed sensor coverage. Local reports are unverified. Nearby reports use an illustrative 300 m proximity rule, not a measured flood boundary. No route is guaranteed safe.</p></details>
+        <details className="pointer-events-auto shrink-0 self-start rounded-xl border border-line bg-white/95 px-3 py-2 text-xs text-paper shadow-md backdrop-blur">
+          <summary className="min-h-6 cursor-pointer font-semibold text-xs flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[#9bb5c4]" />
+            <span>{demo ? 'Demo map — sample readings only' : 'Current road conditions unknown'}</span>
+          </summary>
+          <p className="mt-2 text-[11px] leading-relaxed text-fog max-w-xs">
+            No deployed sensor coverage. Local reports are unverified. Nearby reports use an illustrative 300 m proximity rule, not a measured flood boundary. No route is guaranteed safe.
+          </p>
+        </details>
+
         {/* ---------- PLAN: where to? ---------- */}
         {stage === 'plan' && spot && <PlaceDetails poi={spot} flood={floodNear(spot)} onGo={() => goToPoi(spot)} onClose={() => setSpot(null)} />}
+
+        {/* Compact bottom sheet trigger when collapsed on small screens */}
+        {stage === 'plan' && !spot && !panelExpanded && (
+          <div className="pointer-events-auto mt-auto flex items-center justify-between gap-3 rounded-2xl border border-line bg-white/95 p-3.5 shadow-xl backdrop-blur sm:hidden animate-fade-in">
+            <button
+              onClick={() => setPanelExpanded(true)}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-teal text-white text-xs font-bold shadow-sm">
+                {to ? '⚑' : '➤'}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-paper">
+                  {to ? to.name : 'Where to?'}
+                </span>
+                <span className="block truncate text-xs text-fog">
+                  {from ? `From ${from.name}` : 'Tap to search destinations & plan trip'}
+                </span>
+              </span>
+            </button>
+            <button
+              onClick={() => setPanelExpanded(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal px-3.5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#005c66] active:scale-95"
+            >
+              <span>Plan route</span>
+              <span>▲</span>
+            </button>
+          </div>
+        )}
+
         {stage === 'plan' && !spot && (
-          <section className={`${card} min-w-0 shrink-0 p-4 sm:p-6`}>
-            <h2 className="text-xl font-extrabold tracking-tight sm:text-2xl">Where to?</h2>
+          <section
+            className={`${card} ${
+              !panelExpanded ? 'hidden sm:block' : ''
+            } mt-auto max-h-[75dvh] overflow-y-auto min-w-0 shrink-0 p-4 sm:mt-0 sm:max-h-none sm:p-6 animate-fade-up`}
+          >
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-line sm:border-0 sm:pb-0 sm:mb-0">
+              <h2 className="text-xl font-extrabold tracking-tight sm:text-2xl text-paper">
+                Where to?
+              </h2>
+              <button
+                onClick={() => setPanelExpanded(false)}
+                className="flex items-center gap-1.5 rounded-lg border border-line bg-page px-2.5 py-1 text-xs font-semibold text-fog hover:text-paper sm:hidden ml-auto"
+                aria-label="Collapse panel to view map"
+              >
+                <span>Map view</span>
+                <span>▼</span>
+              </button>
+            </div>
             {trip?.evacuation && to && to.name === trip.to.name && to.lat === trip.to.lat && to.lng === trip.to.lng && <p className="mt-2 text-sm leading-relaxed text-fog">Evacuation site selected: <strong className="break-words">{to.name}</strong>. Choose your starting point. Confirm the center is open and follow local evacuation instructions; this map point may not be its entrance.</p>}
             <p className="mt-1 hidden text-sm text-fog sm:block">Routes are compared with sample points or local reports. Road safety is not established.</p>
             <div ref={startInput} className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_44px] items-center gap-2 sm:mt-5">
@@ -802,7 +1331,42 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
                         : 'No reports nearby. Sensor coverage is unavailable; road conditions are unknown.'}
                 </p>
 
-                <ul className="mt-5 grid min-w-0 grid-cols-1 gap-2.5">
+                {sel.isPredictiveAlternative && (
+                  <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-teal/40 bg-teal/5 p-3 text-xs leading-relaxed text-teal">
+                    <span className="text-base leading-none">🛡️</span>
+                    <div>
+                      <strong className="block font-bold">Predictive Detour Proactively Suggested</strong>
+                      <span>
+                        Bypasses historical flood basin {sel.detourAround?.replace('Historical: ', '')} based on NDRRMC & MMDA flood records before live reports are created.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {!sel.isPredictiveAlternative && sel.predictiveRisk !== 'Low' && (
+                  <div className={`mt-3 flex items-start gap-2.5 rounded-xl border p-3 text-xs leading-relaxed ${
+                    sel.predictiveRisk === 'High'
+                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-900'
+                      : 'border-blue-500/30 bg-blue-500/5 text-fog'
+                  }`}>
+                    <span className="text-base leading-none">⚡</span>
+                    <div>
+                      <strong className="block font-bold">
+                        Historical Flood Vulnerability ({sel.predictiveRisk} Risk · {sel.confidenceScore}% confidence)
+                      </strong>
+                      <span>{sel.predictiveAdvisory}</span>
+                    </div>
+                  </div>
+                )}
+
+                {routes.some((r) => r.predictedSegments?.length > 0) && (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3.5 py-2 text-xs font-semibold text-orange-800">
+                    <span className="h-2.5 w-5 shrink-0 rounded-sm bg-[#ea580c] shadow-sm" />
+                    <span>Predicted flood-prone segments highlighted in distinct orange on map</span>
+                  </div>
+                )}
+
+                <ul className="mt-4 grid min-w-0 grid-cols-1 gap-2.5">
                   {routes.map((r, i) => (
                     <li key={i} className="min-w-0">
                       <button
@@ -811,9 +1375,24 @@ export default function Navigate({ nodes, settings, trip, demo = false, active =
                       >
                         <i className={`h-11 w-1.5 shrink-0 rounded-full ${LEVELS[r.worst].color}`} />
                         <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-2 font-bold">
-                            {r === fastest ? 'Fastest' : r.detourAround ? `Avoids ${r.detourAround}` : 'Alternate'}
+                          <span className="flex flex-wrap items-center gap-1.5 font-bold">
+                            {r === fastest ? 'Fastest' : r.detourAround ? `Avoids ${r.detourAround.replace('Historical: ', '')}` : 'Alternate'}
                             {i === 0 && <span className="rounded-full bg-ok/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ok">Compared first</span>}
+                            {r.isPredictiveAlternative && (
+                              <span className="rounded-full bg-teal/15 px-2 py-0.5 text-[10px] font-bold text-teal">
+                                🛡️ Predictive detour
+                              </span>
+                            )}
+                            {r.predictedSegments?.length > 0 && (
+                              <span className="rounded-full bg-orange-500/20 border border-orange-500/30 px-2 py-0.5 text-[10px] font-bold text-orange-800">
+                                ⚡ {r.predictedSegments.length} predicted hazard segment{r.predictedSegments.length > 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {r.predictiveRisk === 'High' && !r.predictedSegments?.length && (
+                              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                ⚡ Historical risk
+                              </span>
+                            )}
                           </span>
                           <span className={`mt-1 block break-words text-sm ${r.worst >= avoid ? 'text-l3' : 'text-fog'}`}>
                             {status(r)}

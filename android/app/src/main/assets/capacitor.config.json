@@ -1,0 +1,12 @@
+{
+	"appId": "ph.agos.trial",
+	"appName": "Agos Trial",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"android": {
+		"allowMixedContent": false
+	}
+}

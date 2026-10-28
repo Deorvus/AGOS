@@ -9,9 +9,14 @@ export type Node = {
   lng: number
   y: number
   level: Level
-  source: 'demo' | 'community'
+  source: 'demo' | 'community' | 'station'
   rain: boolean | null
   updated: number
+  stationCode?: string
+  stationStatus?: { label: string; current: boolean }
+  stationLocationName?: string
+  stationRawReading?: unknown
+  stationObj?: unknown
 }
 
 export const LEVELS: Record<Level, { label: string; short: string; depth: string; rider: string; color: string; text: string }> = {

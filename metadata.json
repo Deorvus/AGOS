@@ -1,0 +1,8 @@
+{
+  "name": "Agos",
+  "description": "Real-time flood navigation and safety intelligence for motorcycle riders and commuters.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

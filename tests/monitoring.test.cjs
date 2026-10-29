@@ -27,6 +27,7 @@ test('fresh, stale, offline, missing, sensor error and cached-failure states',()
  assert.equal(stationState(station(reading(90000)),now).label,'Invalid timestamp');
  assert.equal(stationState({...station(),maintenance:true},now).current,false);
  assert.equal(stationState(station({...reading(),inconsistent:true}),now).label,'Check sensors');
+ assert.equal(stationState(station({...reading(),inconsistent:true}),now).current,true);
 });
 test('events use IDs not array position; ignore duplicates, replay and stale catch-up',()=>{
  const a=station(reading(-10000)), b=station(reading(0,2,true));
@@ -38,6 +39,19 @@ test('events use IDs not array position; ignore duplicates, replay and stale cat
  assert.equal(changes([station(reading(-200000))],[b],now,1).length,0);
  assert.equal(changes([{...a,id:'different'}],[b],now,1).length,0);
  assert.equal(changes([a],[b],now,3).length,1);
+});
+test('mid and high transitions emit notifications when hardware contacts have inconsistent true',()=>{
+ const a=station(reading(-10000, 1));
+ const bMid=station({...reading(0, 2, false), inconsistent: true});
+ const evMid=changes([a], [bMid], now, 1);
+ assert.equal(evMid.length, 1);
+ assert.equal(evMid[0].kind, 'water');
+ assert.equal(evMid[0].to, 2);
+
+ const bHigh=station({...reading(0, 3, true), inconsistent: true});
+ const evHigh=changes([a], [bHigh], now, 1);
+ assert.equal(evHigh.length, 2);
+ assert.equal(evHigh.find(e => e.kind === 'water').to, 3);
 });
 test('failure never produces random fallback data',async()=>{
  const original=global.fetch;

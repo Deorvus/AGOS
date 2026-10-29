@@ -39,12 +39,19 @@ export default function NearbyBanner({ alert, onDismiss, onViewAlerts }: Props) 
             <span className="text-xs font-semibold text-fog">
               · {formatDistance(alert.distanceM)} away
             </span>
+            {alert.source === 'prototype' && (
+              <span className="rounded bg-teal/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-teal">
+                PROTOTYPE {alert.stationCode || 'QC-001'}
+              </span>
+            )}
           </div>
           <h2 className="mt-0.5 truncate text-base font-bold text-paper">
             {alert.place}
           </h2>
           <p className="mt-1 text-xs text-fog">
-            Rider report · not a fixed sensor reading.
+            {alert.source === 'prototype'
+              ? `Hardware sensor telemetry · live discrete level reading.${alert.rain ? ' Rain sensor detected wetness.' : ''}`
+              : 'Rider report · not a fixed sensor reading.'}
           </p>
           <div className="mt-3 flex items-center gap-3">
             <button

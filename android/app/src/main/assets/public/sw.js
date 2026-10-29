@@ -1,6 +1,6 @@
 
-const CACHE = 'agos-shell-20a2ddc8aa5d';
-const URLS = ["/index.html","/assets/index-CNSTLfvx.js","/assets/Navigate-akdcZQdp.js","/assets/web-CbwDE_ph.js","/assets/web-DkpitTnk.js","/assets/web-oCf60zE0.js","/assets/Navigate-CVlsZjEu.css","/assets/index-C4Oga8nT.css","/manifest.webmanifest","/icon-192.png","/icon-512.png"];
+const CACHE = 'agos-shell-e09d226345c0';
+const URLS = ["/index.html","/assets/index-CqMFV8OR.js","/assets/Navigate-DLaC0NF_.js","/assets/web-CA_npNO0.js","/assets/web-COknCyvp.js","/assets/web-g_dPGOIk.js","/assets/Navigate-CVlsZjEu.css","/assets/index-ClRHvFZu.css","/manifest.webmanifest","/icon-192.png","/icon-512.png"];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(URLS))));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('agos-shell-') && k !== CACHE).map(k => caches.delete(k))))));
 self.addEventListener('fetch', e => {

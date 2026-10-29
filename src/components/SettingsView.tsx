@@ -535,13 +535,13 @@ export default function SettingsView({
             <Group title="Nearby alerts">
               <Row
                 label="Nearby flood alerts"
-                hint="Alert when an active rider flood report is detected near you while Agos is open"
+                hint="Alert when a hardware prototype sensor or active rider flood report is detected near you while Agos is open"
               >
                 <Toggle on={s.nearbyNotify} set={toggleNearby} label="Nearby flood alerts" />
               </Row>
               {s.nearbyNotify && (
                 <>
-                  <Row label="Detection radius" hint="Trigger alerts when a report is within this distance">
+                  <Row label="Detection radius" hint="Trigger alerts when a prototype or flood report is within this distance">
                     <div
                       role="group"
                       aria-label="Detection radius"
@@ -573,7 +573,7 @@ export default function SettingsView({
                       <div className="min-w-0 flex-1">
                         <span className="font-semibold text-paper">Foreground location:</span>
                         <p className="mt-0.5 text-[11px] text-fog">
-                          Used only while Agos is open to calculate proximity to active flood reports.
+                          Used only while Agos is open to calculate proximity to hardware prototypes and active flood reports.
                         </p>
                       </div>
                       <div className="shrink-0">

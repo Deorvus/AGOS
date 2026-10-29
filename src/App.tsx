@@ -25,6 +25,7 @@ import {
   sendNearbyNotification,
   initNotificationChannels,
 } from './data/nearby-alerts'
+import { initPushNotifications } from './data/push-notifications'
 import { startDeviceLocationWatch } from './data/device-location'
 import { DEFAULT_SETTINGS, avoidLevel, newUserId, useStored, type Settings, type User } from './data/user'
 import {
@@ -79,6 +80,7 @@ export default function App() {
   const [nearbyAlerts, setNearbyAlerts] = useState<NearbyAlert[]>([])
   const [activeBanner, setActiveBanner] = useState<NearbyAlert | null>(null)
   const trackedInRadius = useRef<Map<string, number>>(new Map())
+  const lastLocation = useRef<[number, number] | null>(null)
   const [community, setCommunityState] = useState<FloodReport[]>(loadReports)
   const setCommunity = (r: FloodReport[]) => (setCommunityState(r), saveReports(r))
   const [user, setUser] = useStored<User | null>('fw.user', null)
@@ -92,9 +94,10 @@ export default function App() {
 
   useEffect(() => {
     void initNotificationChannels()
+    void initPushNotifications()
   }, [])
 
-  // Watch device location and evaluate proximity against active rider reports while Agos is open
+  // Watch device location and evaluate proximity against active prototypes and rider reports while Agos is open
   useEffect(() => {
     if (!settings.nearbyNotify) {
       trackedInRadius.current.clear()
@@ -104,12 +107,17 @@ export default function App() {
 
     const checkLocation = (lat: number, lng: number) => {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+      lastLocation.current = [lat, lng]
       const radius = settings.nearbyRadiusM || 1000
+      const minLevel = avoidLevel(settings)
       const { newAlerts, updatedTracked } = evaluateNearbyDetections(
         [lat, lng],
         community,
         radius,
         trackedInRadius.current,
+        Date.now(),
+        snapshot.data?.stations,
+        minLevel,
       )
       trackedInRadius.current = updatedTracked
       if (newAlerts.length > 0) {
@@ -121,6 +129,11 @@ export default function App() {
       }
     }
 
+    // Immediately evaluate with the latest station readings if location is already known
+    if (lastLocation.current) {
+      checkLocation(lastLocation.current[0], lastLocation.current[1])
+    }
+
     const clearWatch = startDeviceLocationWatch(
       (pos) => checkLocation(pos.latitude, pos.longitude),
       (err) => console.info('Nearby location watch notice:', err.message),
@@ -128,7 +141,14 @@ export default function App() {
     )
 
     return clearWatch
-  }, [settings.nearbyNotify, settings.nearbyRadiusM, community])
+  }, [
+    settings.nearbyNotify,
+    settings.nearbyRadiusM,
+    settings.vehicle,
+    settings.avoidOverride,
+    community,
+    snapshot.data?.stations,
+  ])
 
   useEffect(() => {
     const on = () => setTab(readHash())

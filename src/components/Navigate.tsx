@@ -347,7 +347,7 @@ export default function Navigate({
   // Map init
   useEffect(() => {
     if (!mapEl.current || map.current) return
-    const m = L.map(mapEl.current, { zoomControl: false, attributionControl: true }).setView(trip?.evacuation ? [trip.to.lat, trip.to.lng] : [14.66, 121.045], 12)
+    const m = L.map(mapEl.current, { zoomControl: false, attributionControl: false }).setView(trip?.evacuation ? [trip.to.lat, trip.to.lng] : [14.66, 121.045], 12)
     // Esri basemaps: keyless and not referrer-blocked (OSM's own servers block embedded previews)
     const styleKey = settings.mapStyle === 'dark' ? 'dark' : 'light'
     L.tileLayer(TILES[styleKey], {

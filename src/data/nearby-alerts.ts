@@ -2,6 +2,7 @@ import { distM, type LatLng } from './routing'
 import type { Level } from './sensors'
 import { type FloodReport, isActive, REPORT_TTL } from './reports'
 import { isNativeAndroid } from './device-location'
+import { getStationLocation, stationState, type Station } from './monitoring'
 import { LocalNotifications } from '@capacitor/local-notifications'
 
 export type NearbyAlert = {
@@ -14,7 +15,9 @@ export type NearbyAlert = {
   distanceM: number
   detectedAt: number
   note?: string
-  source: 'community'
+  source: 'community' | 'prototype'
+  stationCode?: string
+  rain?: boolean | null
 }
 
 export const NEARBY_RADIUS_OPTIONS = [
@@ -76,9 +79,83 @@ export function findNearbyReports(
     .sort((a, b) => a.distanceM - b.distanceM)
 }
 
+export type NearbyPrototype = {
+  station: Station
+  stationCode: string
+  name: string
+  locationName: string
+  lat: number
+  lng: number
+  level: Exclude<Level, 0>
+  rain: boolean | null
+  distanceM: number
+  receivedAt: string
+}
+
 /**
- * Evaluates proximity and returns only genuinely new or meaningfully changed alerts.
- * If a report was already notified at the same level while inside the radius, it is not re-sent.
+ * Filter and sort active hardware prototype stations within radius
+ * whose live sensor water level meets or exceeds the specified minimum alert level.
+ */
+export function findNearbyPrototypes(
+  userLoc: LatLng,
+  stations?: Station[],
+  radiusM = 1000,
+  minLevel: Level = 1,
+  now = Date.now(),
+): NearbyPrototype[] {
+  if (!Array.isArray(stations) || !userLoc || !Number.isFinite(userLoc[0]) || !Number.isFinite(userLoc[1])) {
+    return []
+  }
+
+  const results: NearbyPrototype[] = []
+
+  for (const s of stations) {
+    if (!s || typeof s !== 'object') continue
+    const loc = getStationLocation(s)
+    if (!loc) continue
+
+    if (
+      !Number.isFinite(loc.lat) ||
+      !Number.isFinite(loc.lng) ||
+      loc.lat < 4 ||
+      loc.lat > 22 ||
+      loc.lng < 116 ||
+      loc.lng > 127
+    ) {
+      continue
+    }
+
+    const state = stationState(s, now)
+    if (!state.current || !s.latest_reading) continue
+
+    const r = s.latest_reading
+    // Must meet or exceed the avoidance/alert threshold, and have valid discrete flood level
+    if (r.water_level < minLevel || r.water_level === 0 || r.water_level > 3) continue
+
+    const d = distM(userLoc, [loc.lat, loc.lng])
+    if (d <= radiusM) {
+      results.push({
+        station: s,
+        stationCode: s.station_code || 'QC-001',
+        name: s.name.replace(/FloodWatch(\s+Prototype(\s*\d+)?)?/i, 'Agos Prototype'),
+        locationName: loc.locationName,
+        lat: loc.lat,
+        lng: loc.lng,
+        level: r.water_level as Exclude<Level, 0>,
+        rain: r.rain_detected,
+        distanceM: d,
+        receivedAt: r.received_at,
+      })
+    }
+  }
+
+  return results.sort((a, b) => a.distanceM - b.distanceM)
+}
+
+/**
+ * Evaluates proximity against active hardware prototype stations and community reports.
+ * Returns only genuinely new or meaningfully changed alerts.
+ * If an alert was already notified at the same level while inside the radius, it is not re-sent.
  * If the user leaves the radius and later re-enters, or if the water level changes, it fires again.
  */
 export function evaluateNearbyDetections(
@@ -87,12 +164,42 @@ export function evaluateNearbyDetections(
   radiusM: number,
   previouslyTracked: Map<string, number>,
   now = Date.now(),
+  stations?: Station[],
+  minLevel: Level = 1,
 ): { newAlerts: NearbyAlert[]; updatedTracked: Map<string, number> } {
-  const nearby = findNearbyReports(userLoc, reports, radiusM, now)
+  const nearbyReports = findNearbyReports(userLoc, reports, radiusM, now)
+  const nearbyPrototypes = findNearbyPrototypes(userLoc, stations, radiusM, minLevel, now)
   const newAlerts: NearbyAlert[] = []
   const updatedTracked = new Map<string, number>()
 
-  for (const r of nearby) {
+  // 1. Evaluate physical hardware prototypes
+  for (const p of nearbyPrototypes) {
+    const protoKey = `proto-${p.station.id || p.stationCode}`
+    const prevLevel = previouslyTracked.get(protoKey)
+    const isNewToRadius = prevLevel === undefined
+    const hasLevelChanged = prevLevel !== undefined && prevLevel !== p.level
+
+    if (isNewToRadius || hasLevelChanged) {
+      newAlerts.push({
+        id: `NA-PROTO-${p.stationCode}-${p.level}-${now.toString(36)}`,
+        reportId: protoKey,
+        place: `${p.name} (${p.locationName})`,
+        lat: p.lat,
+        lng: p.lng,
+        level: p.level,
+        distanceM: Math.round(p.distanceM),
+        detectedAt: now,
+        note: `Live sensor telemetry: ${p.level === 3 ? 'HIGH' : p.level === 2 ? 'MID' : 'LOW'} water detected by prototype ${p.stationCode}.${p.rain ? ' Rain detected.' : ''}`,
+        source: 'prototype',
+        stationCode: p.stationCode,
+        rain: p.rain,
+      })
+    }
+    updatedTracked.set(protoKey, p.level)
+  }
+
+  // 2. Evaluate active community rider reports
+  for (const r of nearbyReports) {
     const prevLevel = previouslyTracked.get(r.id)
     const isNewToRadius = prevLevel === undefined
     const hasLevelChanged = prevLevel !== undefined && prevLevel !== r.level
@@ -114,6 +221,9 @@ export function evaluateNearbyDetections(
     // Track that this report is currently active inside the radius at this level
     updatedTracked.set(r.id, r.level)
   }
+
+  // Sort nearest first
+  newAlerts.sort((a, b) => a.distanceM - b.distanceM)
 
   return { newAlerts, updatedTracked }
 }
@@ -291,13 +401,26 @@ export async function sendBackgroundNotification(payload: NotificationPayload): 
 export function sendNearbyNotification(alert: NearbyAlert): void {
   const levelLabel = alert.level === 3 ? 'HIGH' : alert.level === 2 ? 'MID' : 'LOW'
   const distanceText = formatDistance(alert.distanceM)
+
+  if (alert.source === 'prototype') {
+    const title = `⚠️ Prototype ${alert.stationCode || 'QC-001'}: ${levelLabel} flood ${distanceText} away`
+    const body = `${levelLabel} flood contact detected at ${alert.place} by hardware station.${alert.rain ? ' Rain detected.' : ''} Avoid road segment.`
+    void sendLocalOrWebNotification({
+      title,
+      body,
+      tag: `agos-prototype-${alert.stationCode || alert.reportId}`,
+      data: { reportId: alert.reportId, level: alert.level, source: 'prototype', stationCode: alert.stationCode },
+    })
+    return
+  }
+
   const title = `Flood reported ${distanceText} away`
   const body = `${levelLabel} flood at ${alert.place}. Rider report · proceed with caution.`
   void sendLocalOrWebNotification({
     title,
     body,
     tag: `agos-nearby-${alert.reportId}`,
-    data: { reportId: alert.reportId, level: alert.level },
+    data: { reportId: alert.reportId, level: alert.level, source: 'community' },
   })
 }
 

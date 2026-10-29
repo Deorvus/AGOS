@@ -72,7 +72,7 @@ export function stationState(s: Station, now = Date.now(), failed = false) {
     return { label: 'Offline', current: false }
   if (Math.max(receivedAge, Number.isFinite(observedAge) ? observedAge : receivedAge) > 60000)
     return { label: 'Stale', current: false }
-  if (r.inconsistent) return { label: 'Check sensors', current: false }
+  if (r.inconsistent) return { label: 'Check sensors', current: true }
   if (!r.device_observed_at) return { label: 'Sampling time unknown', current: false }
   return { label: 'Receiving', current: true }
 }

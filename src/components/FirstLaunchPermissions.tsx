@@ -7,6 +7,7 @@ import {
   requestNotificationPermission,
   initNotificationChannels,
 } from '../data/nearby-alerts'
+import { requestPushPermission } from '../data/push-notifications'
 
 type Props = {
   onComplete: () => void
@@ -22,9 +23,13 @@ export default function FirstLaunchPermissions({ onComplete }: Props) {
       // 1. Request foreground location permission (never background)
       await requestLocationPermission()
 
-      // 2. Request notification permission & set up channels
+      // 2. Request notification permission & set up channels / register with FCM on Android
       await initNotificationChannels()
-      await requestNotificationPermission()
+      if (isAndroid) {
+        await requestPushPermission()
+      } else {
+        await requestNotificationPermission()
+      }
     } catch (err) {
       console.warn('Initial permission setup notice:', err)
     } finally {

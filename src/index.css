@@ -132,7 +132,10 @@
   font-family: var(--font-sans);
 }
 
-.leaflet-control-attribution { font-size: 9px; }
+.leaflet-control-attribution,
+.maplibregl-ctrl-attrib {
+  display: none !important;
+}
 
 /* Map pins + info cards */
 .fw-pin div {

@@ -46,7 +46,7 @@ export function WaterLevelGraphic({
       waveHeight: 4,
       fill: 'rgba(22, 130, 96, 0.16)',
       stroke: '#168260',
-      label: 'Below LOW contact',
+      label: 'Clear (< 30 cm)',
       textColor: '#168260',
       lowWet: false,
       midWet: false,
@@ -57,7 +57,7 @@ export function WaterLevelGraphic({
       waveHeight: 5,
       fill: 'rgba(155, 112, 0, 0.18)',
       stroke: '#9b7000',
-      label: 'LOW contact active',
+      label: 'Shallow Flood (~30 cm)',
       textColor: '#9b7000',
       lowWet: true,
       midWet: false,
@@ -68,7 +68,7 @@ export function WaterLevelGraphic({
       waveHeight: 5,
       fill: 'rgba(202, 91, 19, 0.2)',
       stroke: '#ca5b13',
-      label: 'MID contact active',
+      label: 'Hazardous Flood (~60 cm)',
       textColor: '#ca5b13',
       lowWet: true,
       midWet: true,
@@ -79,7 +79,7 @@ export function WaterLevelGraphic({
       waveHeight: 5,
       fill: 'rgba(193, 60, 73, 0.22)',
       stroke: '#c13c49',
-      label: 'HIGH contact active',
+      label: 'Severe Flood (~90 cm)',
       textColor: '#c13c49',
       lowWet: true,
       midWet: true,
@@ -97,36 +97,36 @@ export function WaterLevelGraphic({
     <div
       className="relative overflow-hidden rounded-xl border border-line bg-page/70 p-2"
       role="img"
-      aria-label={`Water contact level: ${LEVELS[level].label}. Discrete contact category; depth not measured.`}
+      aria-label={`Water level: ${cfg.label}. Road sensor measurement.`}
     >
       <svg viewBox="0 0 240 76" className="h-20 w-full" fill="none">
         {/* Contact probe levels */}
-        {/* HIGH Probe (y = 18) */}
-        <line x1="20" y1="18" x2="185" y2="18" stroke={cfg.highWet ? '#c13c49' : '#dce4e8'} strokeWidth="1" strokeDasharray="3 3" />
-        <circle cx="185" cy="18" r="3.5" fill={cfg.highWet ? '#c13c49' : '#ffffff'} stroke={cfg.highWet ? '#c13c49' : '#9bb5c4'} strokeWidth="1.5" />
-        <text x="194" y="21" fill={cfg.highWet ? '#c13c49' : '#7d939e'} fontSize="9" fontWeight="700">HIGH</text>
+        {/* 90cm Probe (y = 18) */}
+        <line x1="20" y1="18" x2="175" y2="18" stroke={cfg.highWet ? '#c13c49' : '#dce4e8'} strokeWidth="1" strokeDasharray="3 3" />
+        <circle cx="175" cy="18" r="3.5" fill={cfg.highWet ? '#c13c49' : '#ffffff'} stroke={cfg.highWet ? '#c13c49' : '#9bb5c4'} strokeWidth="1.5" />
+        <text x="183" y="21" fill={cfg.highWet ? '#c13c49' : '#7d939e'} fontSize="9" fontWeight="700">90 cm</text>
 
-        {/* MID Probe (y = 36) */}
-        <line x1="20" y1="36" x2="185" y2="36" stroke={cfg.midWet ? '#ca5b13' : '#dce4e8'} strokeWidth="1" strokeDasharray="3 3" />
-        <circle cx="185" cy="36" r="3.5" fill={cfg.midWet ? '#ca5b13' : '#ffffff'} stroke={cfg.midWet ? '#ca5b13' : '#9bb5c4'} strokeWidth="1.5" />
-        <text x="194" y="39" fill={cfg.midWet ? '#ca5b13' : '#7d939e'} fontSize="9" fontWeight="700">MID</text>
+        {/* 60cm Probe (y = 36) */}
+        <line x1="20" y1="36" x2="175" y2="36" stroke={cfg.midWet ? '#ca5b13' : '#dce4e8'} strokeWidth="1" strokeDasharray="3 3" />
+        <circle cx="175" cy="36" r="3.5" fill={cfg.midWet ? '#ca5b13' : '#ffffff'} stroke={cfg.midWet ? '#ca5b13' : '#9bb5c4'} strokeWidth="1.5" />
+        <text x="183" y="39" fill={cfg.midWet ? '#ca5b13' : '#7d939e'} fontSize="9" fontWeight="700">60 cm</text>
 
-        {/* LOW Probe (y = 54) */}
-        <line x1="20" y1="54" x2="185" y2="54" stroke={cfg.lowWet ? '#9b7000' : '#dce4e8'} strokeWidth="1" strokeDasharray="3 3" />
-        <circle cx="185" cy="54" r="3.5" fill={cfg.lowWet ? '#9b7000' : '#ffffff'} stroke={cfg.lowWet ? '#9b7000' : '#9bb5c4'} strokeWidth="1.5" />
-        <text x="194" y="57" fill={cfg.lowWet ? '#9b7000' : '#7d939e'} fontSize="9" fontWeight="700">LOW</text>
+        {/* 30cm Probe (y = 54) */}
+        <line x1="20" y1="54" x2="175" y2="54" stroke={cfg.lowWet ? '#9b7000' : '#dce4e8'} strokeWidth="1" strokeDasharray="3 3" />
+        <circle cx="175" cy="54" r="3.5" fill={cfg.lowWet ? '#9b7000' : '#ffffff'} stroke={cfg.lowWet ? '#9b7000' : '#9bb5c4'} strokeWidth="1.5" />
+        <text x="183" y="57" fill={cfg.lowWet ? '#9b7000' : '#7d939e'} fontSize="9" fontWeight="700">30 cm</text>
 
         {/* Chamber base */}
-        <line x1="16" y1="72" x2="188" y2="72" stroke="#9bb5c4" strokeWidth="2" strokeLinecap="round" />
+        <line x1="16" y1="72" x2="178" y2="72" stroke="#9bb5c4" strokeWidth="2" strokeLinecap="round" />
 
         {/* Water wave fill with subtle horizontal oscillation */}
         <g className="animate-wave-motion">
           <path d={waveD} fill={cfg.fill} stroke={cfg.stroke} strokeWidth="1.5" />
         </g>
 
-        {/* Contact state pill badge */}
-        <rect x="22" y={y > 45 ? 12 : 50} width="105" height="18" rx="9" fill="#ffffff" stroke={cfg.stroke} strokeWidth="1" opacity="0.95" />
-        <text x="74" y={y > 45 ? 24 : 62} textAnchor="middle" fill={cfg.textColor} fontSize="9" fontWeight="700">
+        {/* Contact state label */}
+        <rect x="18" y={y > 45 ? 10 : 50} width="124" height="19" rx="9.5" fill="#ffffff" stroke={cfg.stroke} strokeWidth="1" opacity="0.95" />
+        <text x="80" y={y > 45 ? 23 : 63} textAnchor="middle" fill={cfg.textColor} fontSize="8.5" fontWeight="700">
           {cfg.label}
         </text>
       </svg>
@@ -200,9 +200,9 @@ export function RainGraphic({
           </g>
 
           {/* Label badge */}
-          <rect x="68" y="56" width="104" height="17" rx="8.5" fill="#ffffff" stroke="#067a85" strokeWidth="1" />
+          <rect x="62" y="56" width="116" height="17" rx="8.5" fill="#ffffff" stroke="#067a85" strokeWidth="1" />
           <text x="120" y="68" textAnchor="middle" fill="#067a85" fontSize="9" fontWeight="700">
-            Moisture detected
+            Active rainfall
           </text>
         </svg>
       </div>
@@ -214,7 +214,7 @@ export function RainGraphic({
     <div
       className="relative overflow-hidden rounded-xl border border-line bg-page/70 p-2"
       role="img"
-      aria-label="No rain detected at prototype sensor"
+      aria-label="No rain detected at prototype sensor. Weather is clear."
     >
       <svg viewBox="0 0 240 76" className="h-20 w-full" fill="none">
         {/* Calm sun with gentle pulse */}
@@ -238,9 +238,9 @@ export function RainGraphic({
         </g>
 
         {/* Label badge */}
-        <rect x="68" y="52" width="104" height="17" rx="8.5" fill="#ffffff" stroke="#9bb5c4" strokeWidth="1" />
+        <rect x="62" y="52" width="116" height="17" rx="8.5" fill="#ffffff" stroke="#9bb5c4" strokeWidth="1" />
         <text x="120" y="64" textAnchor="middle" fill="#526873" fontSize="9" fontWeight="700">
-          No rain detected
+          Clear & dry
         </text>
       </svg>
     </div>

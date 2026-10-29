@@ -32,8 +32,8 @@ export default function AlertFeed({
             <h1 className="text-2xl font-bold">Nearby flood alerts</h1>
             <p className="mt-1 text-sm text-fog">
               {nearbyEnabled
-                ? 'Monitored against active rider reports while Agos is open. Background push is not connected.'
-                : 'Turn on nearby alerts in Settings to receive warnings when active flood reports are near you.'}
+                ? 'Monitored against hardware prototypes and active rider reports while Agos is open.'
+                : 'Turn on nearby alerts in Settings to receive warnings when prototypes or flood reports are near you.'}
             </p>
           </div>
           {nearbyAlerts.length > 0 && onClearNearby && (
@@ -66,6 +66,11 @@ export default function AlertFeed({
                         <span className="text-xs font-semibold text-fog">
                           · {formatDistance(na.distanceM)} away
                         </span>
+                        {na.source === 'prototype' && (
+                          <span className="rounded bg-teal/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-teal">
+                            PROTOTYPE {na.stationCode || 'QC-001'}
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-fog">
                         {formatTime(na.detectedAt)}
@@ -78,7 +83,9 @@ export default function AlertFeed({
                       <p className="mt-1 text-xs text-fog">"{na.note}"</p>
                     )}
                     <p className="mt-2 text-[11px] font-medium text-fog">
-                      Source: Rider report · not a verified sensor reading
+                      {na.source === 'prototype'
+                        ? `Source: Hardware prototype ${na.stationCode || 'QC-001'} · live sensor reading${na.rain ? ' · rain detected' : ''}`
+                        : 'Source: Rider report · not a verified sensor reading'}
                     </p>
                   </li>
                 )
